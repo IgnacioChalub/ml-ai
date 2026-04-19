@@ -180,6 +180,216 @@ Sorpresa: esa es **exactamente la ecuación normal** que ya vimos en la [página
 
 En logística la loss no es cuadrática, entonces Newton **no** converge en un paso. Pero sigue convergiendo **mucho más rápido** que GD (tipo 5-10 iteraciones contra cientos). La versión específica se llama **IRLS** (*Iteratively Reweighted Least Squares*) y es el algoritmo default de `statsmodels.Logit` y opciones como `solver="newton-cg"` en sklearn.
 
+## GD vs Newton: la comparación visual
+
+Los dos son **métodos iterativos** para encontrar el mínimo de una función. La diferencia clave está en **cuánta información usan** en cada paso.
+
+### Gradient Descent — solo primera derivada
+
+$$
+x_{n+1} = x_n - \alpha \cdot \nabla f(x_n)
+$$
+
+**Intuitivamente**: estás parado en una ladera, mirás la dirección en la que baja más rápido, y das un paso de tamaño $\alpha$ (la learning rate) en esa dirección. Repetís. Es simple y barato, pero **cerca del mínimo va despacio** — la pendiente ya es chica, el paso se hace chico, y la convergencia es lineal.
+
+### Método de Newton — primera + segunda derivada
+
+$$
+x_{n+1} = x_n - \left[\nabla^2 f(x_n)\right]^{-1} \cdot \nabla f(x_n)
+$$
+
+**La idea**: aproxima $f$ localmente por una **parábola** (expansión de Taylor de segundo orden) y **salta directo al mínimo de esa parábola**. Si $f$ ya es cuadrática, llegás al óptimo en un solo paso.
+
+### Lado a lado
+
+```{python}
+#| fig-cap: "GD da muchos pasos chicos siguiendo la pendiente. Newton salta al mínimo usando la curvatura."
+#| echo: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+x = np.linspace(-4, 4, 400)
+f = lambda x: 0.3 * x**2
+df = lambda x: 0.6 * x
+ddf = lambda x: 0.6
+
+# GD
+ax = axes[0]
+ax.plot(x, f(x), color="#9ca3af", lw=2)
+xs = [-3.5]
+lr = 0.5
+for _ in range(6):
+    x_new = xs[-1] - lr * df(xs[-1])
+    xs.append(x_new)
+ax.scatter(xs, [f(x_) for x_ in xs], color="#2563eb", s=[110] + [55]*5 + [140], zorder=3, edgecolor="white", linewidth=1.5)
+for i in range(len(xs)-1):
+    ax.annotate("", xy=(xs[i+1], f(xs[i+1])), xytext=(xs[i], f(xs[i])),
+                arrowprops=dict(arrowstyle="->", color="#2563eb", lw=2))
+ax.annotate("$x_0$", xy=(xs[0]-0.3, f(xs[0])+0.3), fontsize=14, color="#1e40af")
+ax.set_title("Descenso del gradiente", fontsize=14)
+ax.set_xlabel("Pasos pequeños usando solo la pendiente", fontsize=11, color="#6b7280")
+ax.set_xticks([]); ax.set_yticks([])
+ax.spines[["top", "right"]].set_visible(False)
+
+# Newton
+ax = axes[1]
+ax.plot(x, f(x), color="#9ca3af", lw=2)
+x0 = -3.5
+x1 = x0 - df(x0) / ddf(x0)
+ax.scatter([x0, x1], [f(x0), f(x1)], color="#e11d48", s=[130, 150], zorder=3, edgecolor="white", linewidth=1.5)
+ax.annotate("", xy=(x1, f(x1)), xytext=(x0, f(x0)),
+            arrowprops=dict(arrowstyle="->", color="#e11d48", lw=2.5))
+ax.annotate("$x_0$", xy=(x0-0.3, f(x0)+0.3), fontsize=14, color="#9f1239")
+ax.set_title("Método de Newton", fontsize=14)
+ax.set_xlabel("Un salto usando la curvatura", fontsize=11, color="#6b7280")
+ax.set_xticks([]); ax.set_yticks([])
+ax.spines[["top", "right"]].set_visible(False)
+
+plt.tight_layout(); plt.show()
+```
+
+### El trade-off en una línea
+
+Newton converge **mucho más rápido** (convergencia **cuadrática** cerca del óptimo — el error se *eleva al cuadrado* cada iteración), pero cada paso cuesta $O(n^3)$ porque hay que **invertir la Hessiana**. GD es lento (**convergencia lineal**), pero cada paso cuesta $O(n)$ y escala bien a muchas dimensiones.
+
+Por eso:
+
+- **Deep learning** (millones de parámetros): variantes de GD — SGD, Adam, RMSProp. La Hessiana no se puede ni almacenar.
+- **Problemas de dimensión moderada** y precisión alta: Newton o sus aproximaciones **BFGS / L-BFGS** (que aproximan la inversa de la Hessiana sin calcularla explícitamente).
+
+Newton también puede fallar cuando la Hessiana **no es definida positiva** (puntos silla, regiones no convexas) — ahí el "mínimo de la parábola" apunta en direcciones raras. GD sigue avanzando, aunque despacio.
+
+## Cómo la curvatura adapta el tamaño del paso {#sec-curvatura-paso}
+
+Un punto sutil que vale la pena entender bien: **la segunda derivada controla el tamaño del paso de Newton, de forma inversamente proporcional**.
+
+Mirá dónde vive $f''$ en la fórmula:
+
+$$
+\text{paso} = \frac{f'(x_n)}{f''(x_n)}
+$$
+
+La curvatura está en el **denominador**. Entonces:
+
+- $f''$ **grande** (valle estrecho, puntiagudo) → dividís por algo grande → **paso chico**. Tiene sentido: si el valle es angosto, un paso grande te haría rebotar al otro lado.
+- $f''$ **chica** (valle ancho, plano) → dividís por algo chico → **paso grande**. También tiene sentido: si el terreno es plano, podés avanzar mucho sin riesgo de pasarte.
+
+::: {.callout-tip}
+## La belleza: Newton auto-adapta el learning rate
+En GD tenés que elegir $\alpha$ a mano. Elegís mal y:
+
+- $\alpha$ muy alto → oscila o diverge.
+- $\alpha$ muy bajo → tarda una eternidad.
+
+**Newton no tiene $\alpha$**. La segunda derivada hace de learning rate automático — chico donde hace falta, grande donde se puede.
+:::
+
+### Interactivo: mirá cómo la curvatura cambia el paso
+
+Ajustá la **curvatura** de la parábola y mirá cómo cambia el paso de Newton desde un mismo punto inicial.
+
+```{ojs}
+//| echo: false
+viewof newtonInputs = Inputs.form({
+  curv: Inputs.range([0.1, 3], {value: 0.5, step: 0.05, label: "Curvatura (2a, controla f′′)"}),
+  x0:   Inputs.range([-4, 4], {value: -3, step: 0.1, label: "Punto inicial x₀"}),
+  lr:   Inputs.range([0.05, 0.5], {value: 0.3, step: 0.01, label: "Learning rate para GD"})
+})
+```
+
+```{ojs}
+//| echo: false
+newtonData = {
+  const a = newtonInputs.curv / 2;
+  const x0 = newtonInputs.x0;
+  const xs = d3.range(-5, 5.01, 0.05);
+  const curve = xs.map(x => ({x, y: a * x * x}));
+
+  // Newton: un solo paso. f'(x) = 2ax, f''(x) = 2a. Step = 2ax/2a = x. Lands at 0.
+  const grad0 = 2 * a * x0;
+  const hess0 = 2 * a;
+  const xNewton = x0 - grad0 / hess0;
+
+  // GD: varios pasos con lr fijo
+  const gdPath = [x0];
+  let cur = x0;
+  for (let i = 0; i < 30; i++) {
+    cur = cur - newtonInputs.lr * 2 * a * cur;
+    gdPath.push(cur);
+    if (Math.abs(cur) < 0.02) break;
+  }
+
+  // Step size (en x)
+  const newtonStep = Math.abs(xNewton - x0);
+
+  // Para comparar GD, cuánto avanzaría en un paso de esa curvatura
+  const gdFirstStepSize = Math.abs(newtonInputs.lr * grad0);
+
+  return {curve, x0, xNewton, gdPath, a, grad0, hess0, newtonStep, gdFirstStepSize};
+}
+```
+
+```{ojs}
+//| echo: false
+html`
+<div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.8rem; margin: 1rem 0;">
+  <div style="padding: 0.9rem; background: #f0f9ff; border-radius: 0.5rem; text-align: center;">
+    <div style="font-size: 0.82rem; color: #6b7280;">f′′(x₀) (curvatura)</div>
+    <div style="font-size: 1.5rem; font-weight: 600; color: #2E5EAA;">${newtonData.hess0.toFixed(2)}</div>
+  </div>
+  <div style="padding: 0.9rem; background: #fef3c7; border-radius: 0.5rem; text-align: center;">
+    <div style="font-size: 0.82rem; color: #6b7280;">Paso de Newton</div>
+    <div style="font-size: 1.5rem; font-weight: 600; color: #92400e;">${newtonData.newtonStep.toFixed(2)}</div>
+  </div>
+  <div style="padding: 0.9rem; background: #fee2e2; border-radius: 0.5rem; text-align: center;">
+    <div style="font-size: 0.82rem; color: #6b7280;">GD: pasos para converger</div>
+    <div style="font-size: 1.5rem; font-weight: 600; color: #991b1b;">${newtonData.gdPath.length - 1}</div>
+  </div>
+</div>
+`
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: 720,
+  height: 380,
+  grid: true,
+  x: {label: "x →", domain: [-5, 5]},
+  y: {label: "↑ f(x)", domain: [0, 10]},
+  marks: [
+    // Función
+    Plot.line(newtonData.curve, {x: "x", y: "y", stroke: "#94a3b8", strokeWidth: 2}),
+    // Mínimo
+    Plot.dot([{x: 0, y: 0}], {x: "x", y: "y", fill: "#22c55e", r: 7, stroke: "white", strokeWidth: 2}),
+    // GD path
+    Plot.line(newtonData.gdPath.map(x => ({x, y: newtonData.a * x * x})),
+             {x: "x", y: "y", stroke: "#2563eb", strokeWidth: 1.5, opacity: 0.6}),
+    Plot.dot(newtonData.gdPath.map(x => ({x, y: newtonData.a * x * x})),
+            {x: "x", y: "y", fill: "#2563eb", r: 3, opacity: 0.7}),
+    // Newton jump
+    Plot.arrow([{x1: newtonData.x0, y1: newtonData.a * newtonData.x0 ** 2, x2: newtonData.xNewton, y2: newtonData.a * newtonData.xNewton ** 2}],
+              {x1: "x1", y1: "y1", x2: "x2", y2: "y2", stroke: "#e11d48", strokeWidth: 3, headLength: 14}),
+    Plot.dot([{x: newtonData.x0, y: newtonData.a * newtonData.x0 ** 2}],
+            {x: "x", y: "y", fill: "#e11d48", r: 7, stroke: "white", strokeWidth: 2}),
+    Plot.text([{x: newtonData.x0, y: newtonData.a * newtonData.x0 ** 2}],
+             {x: "x", y: "y", text: () => "  x₀", fill: "#e11d48", textAnchor: "start", fontWeight: "bold", dy: -10})
+  ]
+})
+```
+
+**Qué probar:**
+
+- Subí la **curvatura** de 0.1 a 3. Mirá que el *valor* de $f''(x_0)$ crece, pero **Newton siempre llega al mínimo en un solo paso** (porque una parábola es cuadrática exacta).
+- Bajá la curvatura a 0.1 (valle ancho y plano) y fijate cómo **GD tarda mucho más pasos**. Con curvatura 3 (valle estrecho), GD puede hasta **oscilar o divergir** con el mismo learning rate — porque el gradiente es proporcional a la curvatura, y un LR fijo que funcionaba con curvatura chica se vuelve demasiado grande con curvatura alta.
+- Newton **auto-corrige** esa situación: aunque la curvatura cambie, su paso se ajusta y siempre llega al óptimo.
+
+::: {.callout-note}
+## ¿Por qué en la parábola Newton siempre llega en un paso?
+Porque la aproximación cuadrática de Taylor **es exacta** (la función ya era cuadrática). En funciones no cuadráticas (como log-loss), la aproximación es buena cerca del punto actual pero no perfecta, y hacen falta varios pasos — aunque muchos menos que GD.
+:::
+
 ## Trade-offs: GD vs Newton
 
 | | Gradient Descent | Método de Newton |
