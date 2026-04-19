@@ -1,0 +1,238 @@
+---
+title: "GLM + Método de Newton"
+subtitle: "Unificando regresión lineal y logística, y optimizando más rápido"
+description: "Los Generalized Linear Models como marco que contiene a todos los modelos lineales, y el método de Newton como alternativa a gradient descent."
+jupyter: python3
+---
+
+[Supervisado]{.topic-pill} [Unificación]{.topic-pill} [Optimización]{.topic-pill}
+
+## Intuición {#sec-intuicion}
+
+::: {.intuicion-block}
+Hasta ahora vimos dos modelos que se parecen sospechosamente entre sí: **regresión lineal** y **regresión logística**. Los dos tienen el mismo corazón ($z = w^\top x + b$), entrenan con la misma idea (MLE), y optimizan con la misma herramienta (GD).
+
+La pregunta obvia: *¿son casos particulares de algo más grande?* La respuesta es sí. Ese "algo más grande" se llama **Generalized Linear Models** (GLM), y una vez que lo entendés, regresión de Poisson, regresión gamma, y muchos otros modelos "nuevos" dejan de serlo — son todos el mismo GLM con piezas distintas.
+:::
+
+Y mientras estamos en el tema de unificar, vamos a ver una **segunda forma** de encontrar los parámetros óptimos: el **método de Newton**. Es más rápido que gradient descent cuando se puede usar — y es lo que en el fondo hace la función `LogisticRegression` de sklearn cuando le ponés `solver="newton-cg"`.
+
+## La receta GLM
+
+Un GLM tiene **tres ingredientes**. Los vas a reconocer de inmediato.
+
+### 1. Distribución del target
+
+Asumís que $y$ (la etiqueta) viene de una distribución de la **familia exponencial**: normal, Bernoulli, Poisson, gamma, binomial, etc.
+
+La elección depende de la naturaleza del target:
+
+| $y$ es… | Usás distribución… | Modelo que resulta |
+|---|---|---|
+| Número real continuo | Normal | **Regresión lineal** |
+| Binario (0/1) | Bernoulli | **Regresión logística** |
+| Conteo entero no negativo | Poisson | **Regresión de Poisson** |
+| Tiempo de espera / positivo continuo | Gamma | **Regresión gamma** |
+| Categórico (>2 clases) | Categórica / Multinomial | **Regresión softmax** |
+
+### 2. Predictor lineal
+
+Lo que ya conocés:
+
+$$
+\eta = w^\top x + b
+$$
+
+Siempre el mismo. Lo que cambia en cada GLM es qué hacés con $\eta$ después.
+
+### 3. Función de enlace (link function)
+
+Una función $g$ que conecta el predictor lineal con la **media** de la distribución del target:
+
+$$
+g(\mu) = \eta \quad\iff\quad \mu = g^{-1}(\eta)
+$$
+
+La *link function* (su inversa, más bien) es la que transforma $\eta$ en algo interpretable como la media del target.
+
+Ejemplos concretos de $g^{-1}$:
+
+| Modelo | Link inversa $g^{-1}$ | Por qué |
+|---|---|---|
+| Regresión lineal | $g^{-1}(\eta) = \eta$ (identidad) | $\mu$ puede ser cualquier número real |
+| Regresión logística | $g^{-1}(\eta) = \sigma(\eta)$ (sigmoide) | $\mu = p \in (0, 1)$ |
+| Regresión de Poisson | $g^{-1}(\eta) = e^\eta$ (exponencial) | $\mu \ge 0$ (conteos no negativos) |
+
+::: {.callout-tip}
+## El insight clave
+La **sigmoide** que metimos "a mano" en regresión logística no fue un capricho — es literalmente **la link inversa natural para Bernoulli**. Sale sola cuando planteás el problema como GLM. Misma historia con $e^\eta$ para Poisson.
+:::
+
+### Poniendo todo junto
+
+$$
+y \sim \text{Familia}(\mu), \qquad \mu = g^{-1}(w^\top x + b)
+$$
+
+Todos los GLM se entrenan con **MLE**: maximizás la log-verosimilitud de los datos bajo la distribución elegida. El resultado es una función de pérdida específica por modelo:
+
+- Normal → MSE
+- Bernoulli → log-loss
+- Poisson → Poisson deviance
+- etc.
+
+## Ejemplo nuevo: regresión de Poisson
+
+Digamos que querés predecir *"cantidad de clicks por hora en una página"*. El target es un entero no negativo (0, 1, 2, ...). Poisson es la familia correcta.
+
+El modelo:
+
+$$
+y \sim \text{Poisson}(\mu), \qquad \mu = e^{w^\top x + b}
+$$
+
+Log-verosimilitud (simplificada):
+
+$$
+\log \mathcal{L}(w, b) = \sum_i \big[ y_i (w^\top x_i + b) - e^{w^\top x_i + b} \big] + \text{const}
+$$
+
+Maximizar esto con gradient descent (o Newton, que veremos ahora) te da los parámetros óptimos. En sklearn es `PoissonRegressor()` — misma API que `LinearRegression`, solo cambia la familia.
+
+```{python}
+import numpy as np
+from sklearn.linear_model import PoissonRegressor, LinearRegression
+
+rng = np.random.default_rng(0)
+n = 500
+X = rng.normal(0, 1, (n, 2))
+# True rate: mu = exp(0.8*x1 + 0.3*x2 + 0.5)
+mu = np.exp(0.8 * X[:, 0] + 0.3 * X[:, 1] + 0.5)
+y = rng.poisson(mu)
+
+poisson = PoissonRegressor(alpha=0).fit(X, y)
+linear = LinearRegression().fit(X, y)
+
+print(f"Poisson coef: {poisson.coef_}, intercept: {poisson.intercept_:.3f}")
+print(f"Lineal coef:  {linear.coef_}, intercept: {linear.intercept_:.3f}")
+```
+
+Poisson recupera los coeficientes verdaderos ($0.8$, $0.3$). La regresión lineal los subestima porque **asume** ruido normal y $\mu$ puede ser cualquier real — pero el target es un conteo, y la distribución real no es normal.
+
+## Método de Newton: una alternativa más rápida a GD
+
+Hasta ahora usamos **gradient descent**: en cada paso, mirar la pendiente y dar un paso en dirección opuesta. Eso usa **información de primer orden** (la derivada).
+
+El **método de Newton** usa además la **curvatura** — información de **segundo orden** (la segunda derivada, o en vectores, la matriz Hessiana). Eso le permite dar pasos **más inteligentes**.
+
+### La idea en 1D
+
+Querés encontrar el mínimo de $\mathcal{L}(\theta)$. Alrededor del punto actual $\theta_t$, aproximás $\mathcal{L}$ por una **parábola** usando la expansión de Taylor de segundo orden:
+
+$$
+\mathcal{L}(\theta) \approx \mathcal{L}(\theta_t) + \mathcal{L}'(\theta_t)(\theta - \theta_t) + \frac{1}{2}\mathcal{L}''(\theta_t)(\theta - \theta_t)^2
+$$
+
+Esa parábola **tiene su mínimo explícito** (lo despejás derivando e igualando a cero). Newton dice: *"saltá directamente al mínimo de la parábola"*. Eso te da la regla:
+
+$$
+\theta_{t+1} = \theta_t - \frac{\mathcal{L}'(\theta_t)}{\mathcal{L}''(\theta_t)}
+$$
+
+Compará con GD: $\theta_{t+1} = \theta_t - \eta \cdot \mathcal{L}'(\theta_t)$. La diferencia clave: **Newton no necesita learning rate**; la segunda derivada hace de "learning rate automático".
+
+### Versión multivariada
+
+En varias dimensiones, $\mathcal{L}'$ se convierte en el gradiente $\nabla \mathcal{L}$ (un vector) y $\mathcal{L}''$ en la **Hessiana** $H$ (una matriz de segundas derivadas). La regla queda:
+
+$$
+\boxed{\theta_{t+1} = \theta_t - H^{-1} \nabla \mathcal{L}(\theta_t)}
+$$
+
+La Hessiana $H$ tiene en la posición $(i, j)$ la derivada parcial segunda $\frac{\partial^2 \mathcal{L}}{\partial \theta_i \partial \theta_j}$ — mide cómo cambia la pendiente en una dirección cuando te movés en otra.
+
+### Intuición: GD vs Newton
+
+Pensá en una superficie en forma de valle **largo y estrecho**.
+
+- **GD**: ve solo la pendiente local. En un valle estrecho rebota de pared a pared, zigzagueando.
+- **Newton**: ve la curvatura. Se da cuenta de que *"en esta dirección soy muy sensible, mejor hago pasos cortos; en esta otra casi no hay pendiente, hago pasos largos"*. Va directo.
+
+En loss **convexas cuadráticas** (como la de regresión lineal), Newton converge **en una sola iteración** — literalmente el primer paso te lleva al mínimo exacto. GD necesitaría muchas iteraciones.
+
+### Ejemplo: regresión lineal con Newton
+
+Para $\mathcal{L}(\theta) = \|X\theta - y\|^2$:
+
+$$
+\nabla \mathcal{L} = 2 X^\top (X\theta - y), \qquad H = 2 X^\top X
+$$
+
+Newton dice:
+
+$$
+\theta_{t+1} = \theta_t - (2 X^\top X)^{-1} \cdot 2 X^\top (X\theta_t - y) = (X^\top X)^{-1} X^\top y
+$$
+
+Sorpresa: esa es **exactamente la ecuación normal** que ya vimos en la [página de regresión lineal](../02-modelos-lineales/regresion-lineal.qmd). O sea: *Newton en regresión lineal = fórmula cerrada, en un solo paso*. No es casualidad — la ecuación normal **es** el paso de Newton cuando la loss es cuadrática.
+
+### Newton para regresión logística (IRLS)
+
+En logística la loss no es cuadrática, entonces Newton **no** converge en un paso. Pero sigue convergiendo **mucho más rápido** que GD (tipo 5-10 iteraciones contra cientos). La versión específica se llama **IRLS** (*Iteratively Reweighted Least Squares*) y es el algoritmo default de `statsmodels.Logit` y opciones como `solver="newton-cg"` en sklearn.
+
+## Trade-offs: GD vs Newton
+
+| | Gradient Descent | Método de Newton |
+|---|---|---|
+| Información que usa | Gradiente (1er orden) | Gradiente + Hessiana (2do orden) |
+| Costo por iteración | Barato: $O(d)$ o $O(nd)$ | Caro: $O(d^3)$ por invertir la Hessiana |
+| Iteraciones para converger | Muchas | Pocas |
+| Requiere learning rate | Sí | No |
+| Escala bien a $d$ enorme | Sí (SGD, mini-batch) | **No** — invertir una matriz $10^6 \times 10^6$ es inviable |
+| Funciona con loss no convexa | Sí, aunque puede quedar atrapado | No siempre — puede alejarse del mínimo |
+
+::: {.callout-warning}
+## Por qué deep learning NO usa Newton
+Una red neuronal moderna tiene millones o miles de millones de parámetros. La Hessiana sería una matriz de $d \times d$ = ¡trillones de entradas! Completamente imposible de almacenar, mucho menos invertir. Por eso en deep learning siempre se usa SGD / Adam — pagan iteraciones baratas y muchas, no una sola iteración cara.
+
+Para modelos con **pocos parámetros** (regresión logística con $d = 20$ features), Newton es fabuloso y es lo que se usa en la práctica.
+:::
+
+## Código: comparando GD vs Newton en regresión logística
+
+```{python}
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.linear_model import LogisticRegression
+import time
+
+X, y = make_classification(n_samples=500, n_features=10, random_state=0)
+
+# Gradient descent (lbfgs aproxima segundo orden, pero el concepto se sostiene)
+t0 = time.perf_counter()
+LogisticRegression(solver="saga", max_iter=2000).fit(X, y)
+t_gd = time.perf_counter() - t0
+
+# Newton-cg: versión escalable del método de Newton
+t0 = time.perf_counter()
+LogisticRegression(solver="newton-cg", max_iter=2000).fit(X, y)
+t_newton = time.perf_counter() - t0
+
+print(f"SAGA (tipo SGD):  {t_gd*1000:.1f} ms")
+print(f"Newton-CG:        {t_newton*1000:.1f} ms")
+```
+
+En datasets chicos, Newton suele ganar por mucho.
+
+## Lo que te llevás
+
+- **GLM es el marco unificador**: distribución + predictor lineal + link function. Regresión lineal, logística, Poisson, etc. son **todos** GLMs — cambia solo qué pieza enchufás.
+- La **sigmoide** de logística y la **exponencial** de Poisson no son arbitrarias — son las link functions naturales para Bernoulli y Poisson.
+- **Newton usa curvatura**, no solo pendiente. Converge más rápido pero cuesta $O(d^3)$ por iteración.
+- Para **regresión lineal**, un paso de Newton es literalmente la ecuación normal.
+- Para **modelos chicos**, usá Newton (o L-BFGS, una aproximación de él). Para **modelos grandes** (deep learning), solo GD/SGD/Adam son viables.
+
+## Para seguir
+
+- 👉 [Árboles de decisión](arboles.qmd) — saliendo de los modelos lineales.
+- 👉 [Gradient Descent](../02-modelos-lineales/gradient-descent.qmd) — repaso del método "de primer orden".

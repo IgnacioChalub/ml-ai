@@ -1,0 +1,673 @@
+---
+title: "Probabilidad"
+subtitle: "La base formal de casi todo modelo de ML"
+description: "Variables aleatorias, distribuciones clave, esperanza, Bayes, MLE y por qué importa cada una para machine learning."
+jupyter: python3
+---
+
+[Fundamentos]{.topic-pill} [Matemática]{.topic-pill}
+
+## Por qué probabilidad para ML {#sec-por-que}
+
+::: {.intuicion-block}
+ML es, en el fondo, **aprender patrones a partir de datos ruidosos**. Probabilidad es el lenguaje que formaliza *"ruido"*, *"incertidumbre"* y *"qué tan confiable es mi predicción"*.
+
+Casi toda función de pérdida, todo método bayesiano, toda métrica de evaluación se entiende más profundo con probabilidad detrás.
+:::
+
+Concretamente vas a necesitar:
+
+- **Variables aleatorias y distribuciones** → para modelar el ruido.
+- **Esperanza y varianza** → para medir bias/varianza de modelos.
+- **Probabilidad condicional y Bayes** → clasificadores, inferencia, hiperparámetros.
+- **Likelihood y MLE** → la derivación de por qué usamos MSE, cross-entropy, etc.
+- **TCL y ley de grandes números** → por qué promediar muchos datos "funciona".
+
+## Variables aleatorias {#sec-va}
+
+Una **variable aleatoria** (VA) es una función que asigna un número al resultado de un experimento aleatorio. Dos tipos:
+
+### Discretas
+Toman valores numerables: lanzamientos de dados, cantidad de clicks, emails que son spam.
+
+Se describen con la **función de masa de probabilidad** (PMF):
+
+$$
+P(X = x) = p(x), \qquad \sum_x p(x) = 1
+$$
+
+### Continuas
+Toman valores en un intervalo: altura, temperatura, tiempo de respuesta.
+
+Se describen con la **función de densidad** (PDF) — ojo que $f(x)$ **no** es una probabilidad, es una densidad:
+
+$$
+P(a \le X \le b) = \int_a^b f(x)\,dx, \qquad \int_{-\infty}^{\infty} f(x)\,dx = 1
+$$
+
+La probabilidad de un valor exacto en una continua es **cero**; solo tienen sentido probabilidades de intervalos.
+
+## Distribuciones clave para ML {#sec-distribuciones}
+
+### Bernoulli
+
+Un experimento con dos resultados: éxito (1) con probabilidad $p$, fracaso (0) con $1-p$.
+
+$$
+P(X = 1) = p, \quad P(X = 0) = 1 - p
+$$
+
+**Uso en ML**: modelo subyacente de la **regresión logística** — cada clase es un Bernoulli.
+
+### Binomial
+
+$n$ Bernoullis independientes sumados — cuántos éxitos en $n$ intentos.
+
+$$
+P(X = k) = \binom{n}{k} p^k (1-p)^{n-k}
+$$
+
+**Uso**: tests A/B, contar aciertos.
+
+### Categórica
+
+Generalización de Bernoulli a $K > 2$ categorías. Cada categoría $k$ tiene probabilidad $p_k$ con $\sum_k p_k = 1$.
+
+$$
+P(X = k) = p_k
+$$
+
+**Uso en ML**: *toda* la clasificación multiclase. La salida de la capa softmax de una red es exactamente los parámetros de una categórica — cada neurona del último layer es un $p_k$.
+
+Si repetís $n$ experimentos categóricos independientes y contás cuántos cayeron en cada clase, obtenés la **multinomial** (la generalización de la binomial).
+
+### Normal (Gaussiana)
+
+La reina. Simétrica, caracterizada por media $\mu$ y varianza $\sigma^2$:
+
+$$
+f(x) = \frac{1}{\sigma \sqrt{2\pi}} \exp\left(-\frac{(x - \mu)^2}{2\sigma^2}\right)
+$$
+
+**Uso**: ruido en regresión, inicialización de pesos, aproximación de promedios (TCL).
+
+```{python}
+#| fig-cap: "Distribuciones normales con distinta media y varianza."
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import norm
+
+x = np.linspace(-6, 6, 300)
+fig, ax = plt.subplots(figsize=(8, 4))
+for mu, sigma, color in [(0, 1, "#2E5EAA"), (1, 0.5, "#22c55e"), (-1, 1.5, "#dc2626")]:
+    ax.plot(x, norm.pdf(x, mu, sigma), lw=2, color=color, label=f"μ={mu}, σ={sigma}")
+ax.set_xlabel("x"); ax.set_ylabel("f(x)"); ax.legend(); ax.grid(alpha=0.3)
+ax.set_title("Normales con distinta μ y σ")
+plt.tight_layout(); plt.show()
+```
+
+### Uniforme, Exponencial, Poisson
+
+| Distribución | Cuándo |
+|---|---|
+| **Uniforme** $U(a, b)$ | Todo valor entre $a$ y $b$ igual de probable. Inicialización, muestreo. |
+| **Exponencial** | Tiempo entre eventos en un proceso de Poisson. Tiempos de espera. |
+| **Poisson** | Número de eventos en un intervalo. Clicks por hora, llamadas, anotaciones. |
+
+## Esperanza y varianza {#sec-esperanza}
+
+### Esperanza (media)
+
+El valor "promedio ponderado" de una VA:
+
+$$
+\mathbb{E}[X] = \sum_x x \, p(x) \quad\text{(discreta)}, \qquad \mathbb{E}[X] = \int x \, f(x)\, dx \quad\text{(continua)}
+$$
+
+Propiedades clave:
+
+$$
+\mathbb{E}[aX + b] = a\,\mathbb{E}[X] + b, \qquad \mathbb{E}[X + Y] = \mathbb{E}[X] + \mathbb{E}[Y]
+$$
+
+La **linealidad** vale siempre — incluso si $X$ e $Y$ están correlacionadas.
+
+### Varianza
+
+Cuánto se dispersa la VA alrededor de su media:
+
+$$
+\text{Var}(X) = \mathbb{E}[(X - \mathbb{E}[X])^2] = \mathbb{E}[X^2] - (\mathbb{E}[X])^2
+$$
+
+La **desviación estándar** es $\sigma = \sqrt{\text{Var}(X)}$ y tiene las mismas unidades que $X$.
+
+Propiedades:
+
+$$
+\text{Var}(aX + b) = a^2\,\text{Var}(X), \qquad \text{Var}(X + Y) = \text{Var}(X) + \text{Var}(Y) + 2\,\text{Cov}(X, Y)
+$$
+
+**Uso en ML**: el famoso **trade-off bias-varianza** es literalmente sobre estas dos cantidades aplicadas al error del modelo.
+
+## Probabilidad condicional y Bayes {#sec-bayes}
+
+### Condicional
+
+$P(A \mid B)$ = probabilidad de $A$ **dado que** $B$ ya ocurrió.
+
+$$
+P(A \mid B) = \frac{P(A \cap B)}{P(B)}
+$$
+
+### Teorema de Bayes
+
+El resultado más importante de toda la probabilidad aplicada. Y a pesar de su fama de complicado, en el fondo dice algo muy simple: **cómo actualizar tus creencias cuando ves datos nuevos**.
+
+#### Intuición: Bayes es actualizar creencias con evidencia
+
+Tenés una creencia sobre algo (una "hipótesis"). Aparece información nueva (la "evidencia"). ¿Cómo deberías actualizar tu creencia? Ese es todo el juego.
+
+Ejemplo cotidiano:
+
+- Creés que probablemente **no** va a llover hoy (tu creencia previa).
+- Mirás por la ventana y el cielo está negrísimo (evidencia nueva).
+- Cambiás tu creencia: ahora pensás que **sí** va a llover (creencia actualizada).
+
+Lo que nadie te enseña explícitamente: la fuerza con la que deberías mover tu creencia depende de dos cosas.
+
+1. **Qué tan segura era tu creencia anterior**. Si vivís en el desierto y nunca llueve, una nube negra no te va a convencer de nada.
+2. **Qué tan poco esperable era esa evidencia si tu creencia fuera cierta**. Si "no va a llover" es cierto, ¿qué tan raro es ver el cielo negro? Si es rarísimo, es una señal fuerte.
+
+Bayes es la manera **matemáticamente correcta** de combinar esas dos cosas.
+
+#### Un ejemplo desarrollado: el test médico
+
+Vamos al ejemplo clásico, paso a paso con números concretos.
+
+Una enfermedad afecta al **1% de la población**. Un test para detectarla tiene:
+
+- **Sensibilidad 99%**: si estás enfermo, el test da positivo el 99% de las veces.
+- **Especificidad 99%**: si estás sano, el test da negativo el 99% de las veces.
+
+Das positivo. ¿Qué tan probable es que realmente estés enfermo?
+
+> **Intuición rápida**: 99%, ¿no? El test es muy bueno.
+
+Mentira. Vamos a verlo con frecuencias naturales — el truco que lo hace obvio.
+
+#### Contando personas (el método de frecuencias naturales)
+
+Imaginá que le hacés el test a **10.000 personas**:
+
+```
+                            10.000 personas
+                                  │
+                 ┌────────────────┴────────────────┐
+                 │                                 │
+           100 enfermas                      9.900 sanas
+             (el 1%)                           (el 99%)
+                 │                                 │
+        ┌────────┴────────┐              ┌─────────┴──────────┐
+        │                 │              │                    │
+    99 dan +          1 da −         99 dan +            9.801 dan −
+   (sensibilidad)   (falso neg)   (falso positivo)     (especificidad)
+```
+
+Ahora contá: ¿cuántas personas dieron **positivo** en total?
+
+$$
+\text{positivos totales} = \underbrace{99}_{\text{enfermos detectados}} + \underbrace{99}_{\text{falsos positivos}} = 198
+$$
+
+De esas 198 personas con resultado positivo, **solo 99 están realmente enfermas**. Entonces:
+
+$$
+P(\text{enfermo} \mid +) = \frac{99}{198} = 0.5 = 50\%
+$$
+
+**Solo 50%**. Mucho menor al 99% que sugería la intuición.
+
+#### Por qué sorprende tanto
+
+Dos errores cognitivos que Bayes hace visibles:
+
+**1. Confundir $P(+ \mid \text{enfermo})$ con $P(\text{enfermo} \mid +)$.**
+La sensibilidad del test dice "si estás enfermo, da positivo el 99% de las veces". Eso **no** es lo mismo que "si da positivo, estás enfermo el 99% de las veces". Bayes es exactamente la operación que te lleva de uno al otro.
+
+**2. Ignorar el prior (la prevalencia).**
+Con una enfermedad rara, hay muy pocos enfermos. Como hay muchísimos sanos, aunque el test falle muy poquito, en **valor absoluto** los falsos positivos alcanzan o superan a los verdaderos positivos. El prior bajo pesa muchísimo.
+
+::: {.callout-note}
+## La misma trampa aparece en ML todo el tiempo
+Clasificador de fraude con 99% de accuracy, fraude = 1% de las transacciones. Si hay falsos positivos, la mayoría de las alertas son falsas alarmas. Es **exactamente** el ejemplo del test médico con otro disfraz.
+:::
+
+#### De contar personas a la fórmula
+
+Si miramos la cuenta que hicimos:
+
+$$
+P(\text{enfermo} \mid +) \;=\; \frac{\text{enfermos que dan} +}{\text{total que dan} +} \;=\; \frac{\text{enfermos que dan} +}{\text{enfermos que dan} + \;+\; \text{sanos que dan} +}
+$$
+
+Cada uno de esos términos es un producto de dos probabilidades (ser enfermo/sano × dar positivo dado eso):
+
+$$
+P(\text{enfermo} \mid +) = \frac{P(+ \mid \text{enfermo}) \cdot P(\text{enfermo})}{P(+ \mid \text{enfermo}) \cdot P(\text{enfermo}) + P(+ \mid \text{sano}) \cdot P(\text{sano})}
+$$
+
+Verificación: $\dfrac{0.99 \cdot 0.01}{0.99 \cdot 0.01 + 0.01 \cdot 0.99} = \dfrac{0.0099}{0.0198} = 0.5$. ✓
+
+#### La fórmula general
+
+Ahora sí, generalizando — hipótesis $H$, datos $D$:
+
+$$
+\boxed{\;P(H \mid D) = \frac{P(D \mid H) \cdot P(H)}{P(D)}\;}
+$$
+
+Cada pieza con su nombre oficial y su lectura intuitiva:
+
+| Término | Nombre | Qué significa |
+|---------|--------|---------------|
+| $P(H)$ | **Prior** | Cuánto creías en $H$ **antes** de ver los datos |
+| $P(D \mid H)$ | **Likelihood** | Qué tan esperable era $D$ **si** $H$ fuera cierto |
+| $P(H \mid D)$ | **Posterior** | Cuánto creés en $H$ **después** de ver $D$ |
+| $P(D)$ | **Evidencia** | Constante para que todo sume 1 (marginaliza sobre hipótesis) |
+
+En términos de ML: $H$ puede ser "los parámetros del modelo", "la clase de este email", "el cluster al que pertenece este usuario". $D$ son los datos observados. Bayes te dice cómo pasar de "antes de ver los datos" a "después".
+
+#### Tres lecciones que Bayes te deja
+
+1. **El prior pesa.** Si algo es muy raro de entrada, hace falta evidencia *muy* fuerte para volverlo probable. Un test con 99% de precisión no alcanza para una enfermedad con 1% de prevalencia.
+2. **$P(A\mid B) \neq P(B\mid A)$.** La falacia del fiscal, los tests médicos mal leídos, los diagnósticos médicos mal comunicados — todos vienen de confundir estos dos. Bayes es literalmente la fórmula que los conecta.
+3. **La evidencia actualiza, no reemplaza.** Tu creencia nueva es una mezcla de lo que creías antes con lo que observaste ahora. Por eso dos personas con priors distintos, viendo los mismos datos, pueden razonablemente llegar a posteriors distintos.
+
+### Interactivo: Bayes en vivo
+
+```{ojs}
+//| echo: false
+viewof bayesInputs = Inputs.form({
+  prior: Inputs.range([0.001, 0.999], {value: 0.01, step: 0.001, label: "Prior P(H) — prevalencia"}),
+  sens:  Inputs.range([0.5, 0.999], {value: 0.99, step: 0.001, label: "Sensibilidad P(+|H)"}),
+  spec:  Inputs.range([0.5, 0.999], {value: 0.99, step: 0.001, label: "Especificidad P(-|¬H)"})
+})
+```
+
+```{ojs}
+//| echo: false
+posterior = {
+  const p = bayesInputs.prior;
+  const sens = bayesInputs.sens;
+  const spec = bayesInputs.spec;
+  const fpr = 1 - spec;
+  const numerator = sens * p;
+  const denominator = sens * p + fpr * (1 - p);
+  return numerator / denominator;
+}
+```
+
+```{ojs}
+//| echo: false
+html`
+<div style="padding: 1.5rem; background: linear-gradient(135deg, #eff6ff, #ede9fe); border-radius: 0.6rem; text-align: center; margin: 1rem 0;">
+  <div style="font-size: 0.9rem; color: #6b7280;">Posterior P(H | +)</div>
+  <div style="font-size: 2.5rem; font-weight: 700; color: #2E5EAA; margin-top: 0.3rem;">${(posterior * 100).toFixed(2)}%</div>
+  <div style="font-size: 0.85rem; color: #6b7280; margin-top: 0.3rem;">
+    Prior ${(bayesInputs.prior * 100).toFixed(1)}% → Posterior ${(posterior * 100).toFixed(2)}%
+  </div>
+</div>
+`
+```
+
+Jugá con los sliders. Observá que incluso con sensibilidad y especificidad muy altas, **un prior chico arrastra el posterior hacia abajo**. Esta misma idea aparece en clasificación desbalanceada.
+
+## Independencia y correlación {#sec-indep}
+
+Dos VA son **independientes** si conocer una no te dice nada de la otra:
+
+$$
+P(A \cap B) = P(A) \cdot P(B) \quad\iff\quad P(A \mid B) = P(A)
+$$
+
+**Covarianza** mide la dependencia lineal:
+
+$$
+\text{Cov}(X, Y) = \mathbb{E}[(X - \mu_X)(Y - \mu_Y)]
+$$
+
+**Correlación** (Pearson) es covarianza normalizada, en $[-1, 1]$:
+
+$$
+\rho = \frac{\text{Cov}(X, Y)}{\sigma_X \sigma_Y}
+$$
+
+::: {.callout-warning}
+**Correlación no implica independencia** en general — captura solo relaciones *lineales*. Dos variables pueden tener $\rho = 0$ y ser perfectamente dependientes ($Y = X^2$ con $X$ simétrica, por ejemplo).
+:::
+
+## Likelihood y MLE {#sec-mle}
+
+Esta es la sección donde probabilidad se encuentra con ML.
+
+Supongamos que tenemos datos $D = \{x_1, \dots, x_n\}$ iid (independientes, igualmente distribuidos) de una distribución con parámetro $\theta$. La **likelihood** es:
+
+$$
+\mathcal{L}(\theta \mid D) = \prod_{i=1}^{n} p(x_i \mid \theta)
+$$
+
+**MLE** (*Maximum Likelihood Estimation*) elige $\hat\theta$ que maximiza esto. Como $\log$ es monótono y las sumas son más cómodas que productos:
+
+$$
+\hat\theta_{\text{MLE}} = \arg\max_\theta \sum_{i=1}^{n} \log p(x_i \mid \theta)
+$$
+
+### Por qué MSE es "el MLE de gaussiano"
+
+Asumí que los errores $y_i - f(x_i; \theta)$ son $\mathcal{N}(0, \sigma^2)$. La likelihood es:
+
+$$
+\mathcal{L}(\theta) = \prod_i \frac{1}{\sigma\sqrt{2\pi}} \exp\left(-\frac{(y_i - f(x_i; \theta))^2}{2\sigma^2}\right)
+$$
+
+Tomando $\log$ y tirando constantes:
+
+$$
+\log \mathcal{L}(\theta) = -\frac{1}{2\sigma^2} \sum_i (y_i - f(x_i; \theta))^2 + \text{const}
+$$
+
+**Maximizar la log-likelihood** = **minimizar la suma de cuadrados** = MSE.
+
+::: {.callout-note}
+Idéntico argumento: si las etiquetas son Bernoulli, MLE da **cross-entropy / log-loss** — lo que usa [regresión logística](../02-modelos-lineales/regresion-logistica.qmd).
+:::
+
+## Naive Bayes {#sec-naive-bayes}
+
+Un clasificador extremadamente simple pero sorprendentemente competitivo — y es 100% Bayes aplicado.
+
+### La idea
+
+Queremos predecir la clase $C$ dado un vector de features $(x_1, \dots, x_d)$. Por Bayes:
+
+$$
+P(C \mid x_1, \dots, x_d) = \frac{P(x_1, \dots, x_d \mid C) \cdot P(C)}{P(x_1, \dots, x_d)}
+$$
+
+El problema: $P(x_1, \dots, x_d \mid C)$ es una distribución conjunta de $d$ variables — con $d = 100$ binarias ya tenés $2^{100}$ combinaciones. **Intratable**.
+
+### El supuesto "naive"
+
+Asumimos que los features son **condicionalmente independientes dada la clase**:
+
+$$
+P(x_1, \dots, x_d \mid C) = \prod_{j=1}^{d} P(x_j \mid C)
+$$
+
+Esto es casi siempre **falso** — pero sorprendentemente, el clasificador funciona igual. Con esto:
+
+$$
+\hat{C} = \arg\max_C \; P(C) \prod_{j=1}^{d} P(x_j \mid C)
+$$
+
+(No hace falta calcular $P(x)$ — es constante para todas las clases.)
+
+Para evitar underflow por productos enormes, tomamos log:
+
+$$
+\hat{C} = \arg\max_C \; \log P(C) + \sum_j \log P(x_j \mid C)
+$$
+
+### Variantes según el tipo de feature
+
+- **Gaussian NB** — features continuas; $P(x_j \mid C)$ es gaussiana con $\mu_{jc}, \sigma_{jc}$ estimados por MLE.
+- **Multinomial NB** — features son conteos (palabras en un documento, píxeles activos). Clásico para clasificación de texto.
+- **Bernoulli NB** — features binarias (presencia/ausencia).
+
+### Ejemplo: OCR de dígitos {#sec-ocr}
+
+Vamos con algo concreto: clasificar dígitos manuscritos con Bernoulli Naive Bayes, tratando cada píxel como on/off.
+
+```{python}
+#| fig-cap: "Muestras del dataset de dígitos 8x8 de sklearn."
+from sklearn.datasets import load_digits
+from sklearn.model_selection import train_test_split
+from sklearn.naive_bayes import BernoulliNB, GaussianNB
+from sklearn.metrics import accuracy_score, confusion_matrix
+
+digits = load_digits()
+X, y = digits.data, digits.target
+
+fig, axes = plt.subplots(2, 5, figsize=(9, 3.8))
+for ax, img, label in zip(axes.flat, digits.images[:10], digits.target[:10]):
+    ax.imshow(img, cmap="gray_r"); ax.set_title(f"{label}"); ax.axis("off")
+plt.tight_layout(); plt.show()
+```
+
+```{python}
+# Binarizamos para Bernoulli NB (pixel > 7 considerado "activado")
+Xb = (X > 7).astype(int)
+X_train, X_test, y_train, y_test = train_test_split(Xb, y, test_size=0.3, random_state=42)
+
+bnb = BernoulliNB()
+bnb.fit(X_train, y_train)
+print(f"Bernoulli NB accuracy: {accuracy_score(y_test, bnb.predict(X_test)):.3f}")
+
+gnb = GaussianNB()
+gnb.fit(X, y)  # versión Gaussian sobre pixels raw
+print(f"Gaussian NB accuracy (5-fold CV-like approx): {gnb.score(X, y):.3f}")
+```
+
+Podemos visualizar las **"plantillas"** que el modelo aprendió — para cada clase, la probabilidad de cada pixel estar activo:
+
+```{python}
+#| fig-cap: "Probabilidad P(pixel encendido | clase) aprendida por Bernoulli NB. Cada imagen es la 'idea promedio' del dígito según el modelo."
+# log P(x_j = 1 | C) para cada clase
+log_prob = bnb.feature_log_prob_  # shape (n_classes, n_features)
+prob = np.exp(log_prob).reshape(10, 8, 8)
+
+fig, axes = plt.subplots(2, 5, figsize=(9, 3.8))
+for ax, img, label in zip(axes.flat, prob, range(10)):
+    ax.imshow(img, cmap="viridis"); ax.set_title(f"{label}"); ax.axis("off")
+plt.tight_layout(); plt.show()
+```
+
+### Por qué funciona si el supuesto es falso
+
+Aunque los píxeles vecinos están obviamente correlacionados, para **comparar clases** las correlaciones tienden a cancelarse. Naive Bayes suele tener predicciones mal calibradas (probabilidades extremas) pero **decisiones correctas** — que es lo que importa para clasificación.
+
+::: {.callout-tip}
+## Cuándo elegirlo
+- Dataset chico (converge con pocos datos — estimación por MLE con pocas decisiones por parámetro).
+- Muchísimos features (texto: miles de palabras).
+- Baseline súper rápido para comparar modelos más complejos.
+:::
+
+## Muestreo {#sec-muestreo}
+
+Cómo elegís los datos para análisis es casi tan importante como el análisis mismo.
+
+### Tipos de muestreo
+
+| Técnica | Cómo | Cuándo |
+|---|---|---|
+| **Simple aleatorio** | Cada elemento tiene igual probabilidad | Población homogénea |
+| **Estratificado** | Dividís en subgrupos, muestreás proporcionalmente en cada uno | Subgrupos importantes con distinta representación |
+| **Por conglomerados** | Muestreás grupos enteros (ej. escuelas, ciudades) | Costo logístico alto de muestrear individuos |
+| **Sistemático** | Cada k-ésimo elemento | Lista ordenada sin patrones cíclicos |
+| **Por conveniencia** | Los que tenés a mano | Evitar — máxima vulnerabilidad a sesgos |
+
+### Muestreo en ML
+
+- **Train/val/test split**: muestreo sin reemplazo del dataset completo. En datasets desbalanceados, se hace **estratificado por clase** (`StratifiedKFold` en sklearn).
+- **Bootstrap**: muestreo **con reemplazo** de tamaño $n$. Base de Bagging, Random Forest, intervalos de confianza empíricos.
+- **Monte Carlo**: muestrear de una distribución para aproximar integrales difíciles. Base de métodos bayesianos modernos (MCMC).
+- **Importance sampling**: muestrear de una distribución "fácil" y reponderar para aproximar otra.
+
+### Demo: estratificado vs aleatorio en desbalanceo
+
+```{python}
+#| fig-cap: "Con clases muy desbalanceadas, un split aleatorio puede dejar el test sin casos positivos suficientes."
+from sklearn.model_selection import train_test_split
+
+rng = np.random.default_rng(0)
+n = 500
+# 5% positivos
+y_imb = np.concatenate([np.ones(25), np.zeros(475)])
+rng.shuffle(y_imb)
+X_dummy = np.arange(n).reshape(-1, 1)
+
+resultados = {"aleatorio": [], "estratificado": []}
+for seed in range(50):
+    _, _, _, y_te_a = train_test_split(X_dummy, y_imb, test_size=0.3, random_state=seed)
+    _, _, _, y_te_s = train_test_split(X_dummy, y_imb, test_size=0.3, random_state=seed, stratify=y_imb)
+    resultados["aleatorio"].append(y_te_a.mean())
+    resultados["estratificado"].append(y_te_s.mean())
+
+fig, ax = plt.subplots(figsize=(8, 3.5))
+ax.hist(resultados["aleatorio"], bins=15, alpha=0.6, label="aleatorio", color="#dc2626")
+ax.hist(resultados["estratificado"], bins=15, alpha=0.8, label="estratificado", color="#2E5EAA")
+ax.axvline(0.05, color="black", ls="--", label="proporción real (5%)")
+ax.set_xlabel("proporción de positivos en test"); ax.set_ylabel("frecuencia")
+ax.legend(); ax.grid(alpha=0.3)
+plt.tight_layout(); plt.show()
+```
+
+El histograma azul (estratificado) está clavado en el 5%. El rojo (aleatorio) se dispersa — en algunos splits tenés casi **0%** de positivos en test.
+
+## Tests múltiples {#sec-multiple-tests}
+
+Cuando hacés **muchas** pruebas estadísticas, la probabilidad de encontrar "algo significativo por pura suerte" se dispara. Es uno de los drivers principales del p-hacking.
+
+### El problema
+
+Si hacés un test con $\alpha = 0.05$, tenés $5\%$ de falso positivo. Si hacés $m$ tests independientes, la probabilidad de **al menos un** falso positivo es:
+
+$$
+P(\ge 1 \text{ falso positivo}) = 1 - (1 - \alpha)^m
+$$
+
+```{python}
+#| fig-cap: "Probabilidad de al menos un falso positivo al hacer m tests con α=0.05."
+m = np.arange(1, 100)
+fwer = 1 - (1 - 0.05) ** m
+fig, ax = plt.subplots(figsize=(8, 3.5))
+ax.plot(m, fwer, lw=2, color="#dc2626")
+ax.axhline(0.5, color="#94a3b8", ls="--")
+ax.set_xlabel("número de tests (m)"); ax.set_ylabel("P(al menos un falso positivo)")
+ax.grid(alpha=0.3); ax.set_title("El FWER crece brutal con m")
+plt.tight_layout(); plt.show()
+```
+
+Con solo 14 tests independientes, **es más probable** que encuentres un falso positivo que que no.
+
+### Correcciones
+
+**Bonferroni** (simple, conservador):
+
+$$
+\alpha_{\text{corregido}} = \frac{\alpha}{m}
+$$
+
+Si hacés 20 tests y querés $\alpha = 0.05$ global, exigís que cada p-value individual sea $< 0.0025$. Muy estricto — pierde mucho poder estadístico.
+
+**Benjamini-Hochberg (FDR)**: controla la *proporción esperada* de falsos positivos entre los rechazados (no la probabilidad de tener alguno). Mucho más permisivo que Bonferroni y es el estándar en biología / genómica.
+
+### En ML
+
+- **Feature selection**: probar 10.000 features y quedarte con "las significativas" sin corrección es casi garantía de overfitting.
+- **Hiperparámetros**: probar cientos de combinaciones y quedarte con la mejor en validación es p-hacking disfrazado — hace falta un **test final** intocado.
+- **A/B testing**: si corrés 20 experimentos paralelos, aplicá corrección antes de celebrar.
+
+::: {.callout-important}
+La regla general: **cuanto más mirás, menos significa cada mirada**. Documentá cuántas comparaciones hiciste antes de reportar una.
+:::
+
+## Ley de grandes números y TCL {#sec-tcl}
+
+### Ley de grandes números (LGN)
+
+El promedio muestral converge a la esperanza:
+
+$$
+\frac{1}{n} \sum_{i=1}^n X_i \xrightarrow{n \to \infty} \mathbb{E}[X]
+$$
+
+Es la razón por la que "con más datos el promedio es más confiable".
+
+### Teorema Central del Límite (TCL)
+
+La estrella: **la suma de muchas VA independientes** — cualquiera sea su distribución — es aproximadamente **normal**.
+
+$$
+\frac{1}{n} \sum_i X_i \approx \mathcal{N}\left(\mu, \frac{\sigma^2}{n}\right)
+$$
+
+Por eso las gaussianas aparecen en todos lados: es el régimen asintótico natural.
+
+### Interactivo: convergencia del promedio
+
+Simulamos $n$ tiradas de un dado (uniforme discreto). El promedio se acerca a $3.5$ a medida que $n$ crece:
+
+```{python}
+#| fig-cap: "Promedio acumulado vs número de tiradas. La línea punteada es el valor esperado."
+rng = np.random.default_rng(7)
+n = 1000
+tiradas = rng.integers(1, 7, size=n)
+acumulado = np.cumsum(tiradas) / np.arange(1, n + 1)
+
+fig, ax = plt.subplots(figsize=(9, 4))
+ax.plot(acumulado, color="#2E5EAA", lw=1.5)
+ax.axhline(3.5, color="#22c55e", ls="--", lw=2, label="E[X] = 3.5")
+ax.set_xscale("log")
+ax.set_xlabel("n (escala log)"); ax.set_ylabel("promedio acumulado")
+ax.legend(); ax.grid(alpha=0.3)
+plt.tight_layout(); plt.show()
+```
+
+Y el TCL en acción — distribución del promedio de $n$ uniformes:
+
+```{python}
+#| fig-cap: "Histograma del promedio de n=30 uniformes, 10000 experimentos. Aproximadamente normal."
+reps = 10000
+n_per_exp = 30
+promedios = rng.uniform(0, 1, size=(reps, n_per_exp)).mean(axis=1)
+
+fig, ax = plt.subplots(figsize=(8, 4))
+ax.hist(promedios, bins=50, density=True, alpha=0.7, color="#2E5EAA", edgecolor="white")
+# Superponer la normal teórica
+mu = 0.5
+sigma = np.sqrt(1/12 / n_per_exp)  # var uniforme = 1/12
+xs = np.linspace(promedios.min(), promedios.max(), 200)
+ax.plot(xs, norm.pdf(xs, mu, sigma), color="#dc2626", lw=2.5, label=f"N({mu:.2f}, {sigma:.3f}²)")
+ax.set_xlabel("promedio"); ax.set_ylabel("densidad"); ax.legend(); ax.grid(alpha=0.3)
+plt.tight_layout(); plt.show()
+```
+
+## Trampas y malentendidos comunes {#sec-trampas}
+
+::: {.callout-warning}
+### La falacia de la base rate
+Confundir $P(A \mid B)$ con $P(B \mid A)$. El ejemplo médico de más arriba. En ML esto aparece en **clasificación desbalanceada**: un clasificador con $99\%$ de accuracy puede ser inútil si la clase positiva es el $1\%$.
+:::
+
+::: {.callout-warning}
+### "Correlación ⇒ causalidad"
+No. Hay libros enteros sobre por qué no. Guardalo en la cabeza siempre que veas un scatter con tendencia.
+:::
+
+::: {.callout-warning}
+### Confundir densidad con probabilidad
+En continuas, $f(x) = 2$ no significa "hay 200% de chances". Solo $\int$ da probabilidades.
+:::
+
+::: {.callout-warning}
+### Asumir independencia sin chequear
+En datos del mundo real (tiempo, espacio, usuarios) casi **nada** es iid. Un modelo que asume independencia sobre datos correlacionados va a sub-estimar la varianza.
+:::
+
+## Para seguir
+
+- 👉 [Sesgos estadísticos](sesgos.qmd) — ahora que sabés probabilidad, ver cuándo los datos te engañan.
+- 👉 [Regresión Lineal](../02-modelos-lineales/regresion-lineal.qmd) — el primer modelo, donde MSE = MLE gaussiano se vuelve concreto.

@@ -1,0 +1,320 @@
+---
+title: "Sesgos estadísticos"
+subtitle: "Los errores silenciosos que rompen modelos en producción"
+description: "Sesgo de selección, supervivencia, Simpson, data leakage y compañía. Cómo los datos mienten y cómo detectarlo."
+jupyter: python3
+---
+
+[Fundamentos]{.topic-pill} [Metodología]{.topic-pill}
+
+## Por qué esto antes que los modelos {#sec-por-que}
+
+::: {.intuicion-block}
+Un modelo perfecto entrenado sobre datos sesgados es un modelo sesgado con aspecto de ser perfecto. Los problemas más caros en ML **no son algorítmicos** — son problemas de datos que el equipo nunca detectó.
+
+La buena noticia: los sesgos tienen nombres, patrones reconocibles, y antídotos. Si sabés qué buscar, los encontrás.
+:::
+
+Vamos a cubrir los que más importan en la práctica:
+
+1. Sesgo de selección (incluye supervivencia)
+2. Sesgo de muestreo
+3. Paradoja de Simpson
+4. Data leakage
+5. Sesgo de confirmación
+6. Sesgo de etiquetado
+7. El trade-off bias-varianza (el único "bueno")
+
+## Sesgo de selección {#sec-seleccion}
+
+**Cuándo**: el proceso que genera tu muestra depende, directa o indirectamente, de la variable que querés estudiar.
+
+### Ejemplo: el caso de los aviones de la WWII
+
+La historia clásica de Abraham Wald. El ejército analizaba aviones que **volvían** de combate y proponía blindar las zonas con más impactos. Wald dijo: *no*. Los aviones que ven están justamente los que sobrevivieron a esos impactos. Hay que blindar las zonas **sin impactos** — los aviones impactados ahí no volvieron.
+
+Eso es **sesgo de supervivencia**: sólo observás los que "pasaron el filtro".
+
+### En ML
+
+Aparece todo el tiempo:
+
+- Entrenás un modelo de recomendación con usuarios que **siguieron usando la plataforma** — los que se fueron no están. Tu modelo recomienda para los que ya estaban contentos.
+- Modelo de "probabilidad de default" entrenado con clientes **a los que les dimos crédito**. Los que rechazamos nunca están en el train set — nunca aprendés a predecirlos bien.
+- Encuestas de satisfacción: solo responden los muy contentos o muy enojados.
+
+### Cómo detectar
+
+- Preguntar: *¿quién está en mi dataset y quién no?* ¿El mecanismo de filtro es neutro respecto al target?
+- Comparar estadísticas de la muestra contra una fuente independiente (censo, stats públicas).
+- Si hay "filtros" en la pipeline, documentá cada uno.
+
+## Sesgo de muestreo {#sec-muestreo}
+
+**Cuándo**: la muestra **no representa** a la población objetivo, por cómo se eligió.
+
+Casos clásicos:
+- Encuesta telefónica en horario de oficina → no capturás a los que trabajan todo el día.
+- Usuarios de la app que hicieron el tutorial → no son típicos.
+- Datos scrapeados de una red social → no son la "población general".
+
+::: {.callout-warning}
+### El caso Literary Digest (1936)
+La revista encuestó a 10 millones de personas para predecir la elección presidencial de EE.UU. Gallup, con solo 50.000, acertó — Literary Digest falló por 19 puntos. ¿Por qué? Los 10M eran de guías telefónicas y registros de autos, población rica y sesgada políticamente. **Tamaño no arregla sesgo.**
+:::
+
+### Cómo mitigar
+
+- Definir explícitamente la población objetivo **antes** de muestrear.
+- Comparar distribuciones en la muestra vs la población (chi-cuadrado, KS).
+- **Stratified sampling**: muestrear proporcionalmente por subgrupos.
+- **Reweighting**: darle más peso en el training a los grupos subrepresentados.
+
+## Paradoja de Simpson {#sec-simpson}
+
+Una tendencia que aparece en grupos separados **se invierte** al juntarlos (o viceversa).
+
+### Ejemplo: UC Berkeley admissions (1973)
+
+A nivel agregado parecía que la universidad discriminaba contra mujeres (menos admitidas). Pero departamento por departamento, las mujeres tenían tasa de admisión **igual o superior** a los hombres. ¿Qué pasó? Las mujeres aplicaban más a departamentos **con tasa de admisión baja** (más competitivos).
+
+```{python}
+#| fig-cap: "Simpson en acción: en cada departamento la tasa de admisión de mujeres es ≥ a la de hombres, pero el agregado invierte la conclusión."
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Datos estilizados
+data = pd.DataFrame({
+    "depto":     ["A", "A", "B", "B", "C", "C", "D", "D"],
+    "genero":    ["H", "M", "H", "M", "H", "M", "H", "M"],
+    "aplicaron": [825, 108, 560, 25,  325, 593, 373, 375],
+    "admitidos": [512, 89,  353, 17,  138, 202, 53,  94],
+})
+data["tasa"] = data["admitidos"] / data["aplicaron"]
+
+# Agregado
+agg = data.groupby("genero")[["aplicaron", "admitidos"]].sum()
+agg["tasa"] = agg["admitidos"] / agg["aplicaron"]
+print("Tasas agregadas:"); print(agg[["tasa"]].round(3))
+print("\nTasas por departamento:")
+print(data.pivot(index="depto", columns="genero", values="tasa").round(3))
+
+fig, axes = plt.subplots(1, 2, figsize=(11, 4))
+# Por departamento
+pivot = data.pivot(index="depto", columns="genero", values="tasa")
+pivot.plot(kind="bar", ax=axes[0], color=["#2E5EAA", "#dc2626"])
+axes[0].set_title("Tasa de admisión por departamento"); axes[0].set_ylabel("tasa"); axes[0].grid(alpha=0.3, axis="y")
+
+# Agregado
+agg["tasa"].plot(kind="bar", ax=axes[1], color=["#2E5EAA", "#dc2626"])
+axes[1].set_title("Tasa de admisión agregada"); axes[1].set_ylabel("tasa"); axes[1].grid(alpha=0.3, axis="y")
+plt.tight_layout(); plt.show()
+```
+
+Moraleja: **nunca te quedes con el agregado**. Rompelo por subgrupos relevantes. Y ojo con el inverso: un efecto en subgrupos puede desaparecer al agregar.
+
+### Implicancia para ML
+
+Features que parecen fuertemente predictivos a nivel global pueden **invertir** su signo dentro de subgrupos. Modelos lineales son especialmente vulnerables. Árboles y modelos con interacciones manejan esto mejor — *si tenés el feature que identifica el subgrupo*.
+
+## Data leakage {#sec-leakage}
+
+::: {.callout-important}
+El sesgo más sutil y el que más daño hace en ML. Tu modelo ve en training información que no tendrá disponible en predicción real — y vos no te diste cuenta.
+:::
+
+### Formas comunes
+
+**Target leakage**: una feature contiene información sobre el target. Ejemplos reales vistos en producción:
+
+- Predecir "¿el paciente va a ser hospitalizado?" con la feature *"días de hospitalización"* (sólo existe **después**).
+- Predecir churn con *"fecha de cancelación de cuenta"*.
+- Predecir fraude con *"monto reembolsado"*.
+
+**Train-test contamination**: información del test se filtra en el train.
+
+- Normalizar `StandardScaler` sobre **todo el dataset** antes de separar en train/test. Las estadísticas del test contaminan el scaler.
+- Feature engineering con agregados globales (`mean(target)` por categoría) calculados antes de splittear.
+- Duplicados: un registro idéntico (o casi) cae en train y test.
+
+**Temporal leakage**: en series de tiempo, usar datos futuros para predecir el pasado.
+
+- Split aleatorio (en vez de cronológico) en datos con componente temporal.
+- Features como "promedio histórico" calculadas sin respetar la fecha de corte.
+
+### Cómo detectar
+
+- **Score sospechosamente alto**: si tu modelo saca $99\%$ en un problema difícil, asumí leakage hasta demostrar lo contrario.
+- **Feature importance anómala**: una feature domina todo — leela literalmente, preguntate si "se puede conocer en el momento de predicción".
+- **Gap chico train vs test**: leakage a menudo hace que ambos se vean igual de buenos.
+- **Pipeline audit**: todo preprocesamiento debe `fit` solo en train. Usar `Pipeline` de sklearn **no como opción sino como default**.
+
+```{python}
+# Patrón correcto
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import cross_val_score
+
+pipe = Pipeline([
+    ("scaler", StandardScaler()),
+    ("clf", LogisticRegression())
+])
+# El scaler se fit dentro de cada fold, no sobre todo
+```
+
+## Sesgo de confirmación {#sec-confirmacion}
+
+El humano, no el modelo. Cuando probás mil combinaciones de features/hiperparámetros y te **quedás con la que gana** en tu test set, estás haciendo un p-hacking disfrazado. Cuanto más mirás el test, menos se parece a "datos no vistos".
+
+### Mitigación
+
+- **Reservar un test set final** que literalmente no se toca hasta el último día.
+- **Validation set separado** para toda la iteración.
+- **Cross-validation** en vez de un solo fold cuando sea posible.
+- Pre-registrar qué métrica y qué threshold vas a usar, **antes** de ver resultados.
+
+## Sesgo de etiquetado {#sec-etiquetado}
+
+Las etiquetas mismas pueden estar sesgadas.
+
+- Un clasificador de "riesgo criminal" entrenado con arrestos, no con crímenes cometidos. Los arrestos dependen de dónde patrulla la policía.
+- Modelo de "buen empleado" entrenado con promociones pasadas. Hereda sesgos históricos de promoción.
+- Anotadores con criterios distintos ("es insulto o crítica?"). Inter-annotator agreement es la métrica clave.
+
+**Regla**: preguntarse siempre, *¿qué proceso generó esta etiqueta? ¿refleja el fenómeno real o un proxy ruidoso?*
+
+## El trade-off bias-varianza {#sec-bias-var}
+
+Este es el único sesgo "constructivo" — sin él no hay ML. Descompone el error esperado de un modelo:
+
+$$
+\mathbb{E}[(y - \hat f(x))^2] = \underbrace{(\mathbb{E}[\hat f(x)] - f(x))^2}_{\text{Bias}^2} + \underbrace{\mathbb{E}[(\hat f(x) - \mathbb{E}[\hat f(x)])^2]}_{\text{Varianza}} + \underbrace{\sigma^2}_{\text{ruido irreducible}}
+$$
+
+- **Bias alto**: modelo demasiado simple, no captura el patrón. Underfitting.
+- **Varianza alta**: modelo muy flexible, aprende ruido. Overfitting.
+- **Ruido irreducible**: limite teórico, no se puede reducir.
+
+### Interactivo
+
+Movelo y observá cómo cambian bias y varianza con la complejidad del modelo:
+
+```{ojs}
+//| echo: false
+viewof complejidad = Inputs.range([1, 15], {value: 3, step: 1, label: "Grado del polinomio"})
+```
+
+```{ojs}
+//| echo: false
+bvData = {
+  // Genera muchos datasets pequeños, ajusta un polinomio y promedia predicciones
+  const trueFn = x => Math.sin(x * 1.3);
+  const rng = d3.randomLcg(1);
+  const noise = d3.randomNormal.source(rng)(0, 0.25);
+  const nDatasets = 50;
+  const nPoints = 15;
+  const xTest = d3.range(-3, 3.01, 0.08);
+
+  // Fit polinomio simple con ecuaciones normales
+  const fitPoly = (xs, ys, deg) => {
+    const X = xs.map(x => d3.range(0, deg + 1).map(p => x ** p));
+    const Xt = d3.transpose(X);
+    const XtX = Xt.map(row => row.map((_, j) => row.reduce((s, v, i) => s + v * X[i][j], 0)));
+    const Xty = Xt.map(row => row.reduce((s, v, i) => s + v * ys[i], 0));
+    // Resolver sistema por eliminación
+    const n = XtX.length;
+    const M = XtX.map((r, i) => [...r, Xty[i]]);
+    for (let i = 0; i < n; i++) {
+      let p = i;
+      for (let k = i + 1; k < n; k++) if (Math.abs(M[k][i]) > Math.abs(M[p][i])) p = k;
+      [M[i], M[p]] = [M[p], M[i]];
+      for (let k = i + 1; k < n; k++) {
+        const f = M[k][i] / M[i][i];
+        for (let j = i; j <= n; j++) M[k][j] -= f * M[i][j];
+      }
+    }
+    const c = new Array(n).fill(0);
+    for (let i = n - 1; i >= 0; i--) {
+      let s = M[i][n];
+      for (let j = i + 1; j < n; j++) s -= M[i][j] * c[j];
+      c[i] = s / M[i][i];
+    }
+    return c;
+  };
+  const evalPoly = (c, x) => c.reduce((s, v, i) => s + v * x ** i, 0);
+
+  const allPreds = [];
+  for (let d = 0; d < nDatasets; d++) {
+    const xs = Array.from({length: nPoints}, () => rng() * 6 - 3);
+    const ys = xs.map(x => trueFn(x) + noise());
+    const c = fitPoly(xs, ys, complejidad);
+    allPreds.push(xTest.map(x => evalPoly(c, x)));
+  }
+  const avgPred = xTest.map((_, i) => d3.mean(allPreds, p => p[i]));
+  return {xTest, allPreds, avgPred, trueFn: xTest.map(x => trueFn(x))};
+}
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: 720,
+  height: 400,
+  grid: true,
+  x: {label: "x →", domain: [-3, 3]},
+  y: {label: "↑ y", domain: [-2.5, 2.5]},
+  marks: [
+    // Cada predicción individual (varianza)
+    ...bvData.allPreds.map(pred =>
+      Plot.line(bvData.xTest.map((x, i) => ({x, y: pred[i]})), {x: "x", y: "y", stroke: "#94a3b8", strokeOpacity: 0.15, strokeWidth: 0.8})
+    ),
+    // Verdadera
+    Plot.line(bvData.xTest.map((x, i) => ({x, y: bvData.trueFn[i]})), {x: "x", y: "y", stroke: "#22c55e", strokeWidth: 2.5, strokeDasharray: "5,3"}),
+    // Promedio (bias)
+    Plot.line(bvData.xTest.map((x, i) => ({x, y: bvData.avgPred[i]})), {x: "x", y: "y", stroke: "#2E5EAA", strokeWidth: 3})
+  ]
+})
+```
+
+- **Líneas grises**: predicciones de 50 modelos entrenados en datasets distintos (de tamaño 15).
+- **Línea azul**: predicción promedio — cuánto se aleja del verdadero patrón = **bias**.
+- **Línea verde punteada**: función real que queremos aprender.
+- **Dispersión de las grises** alrededor del azul = **varianza**.
+
+Con grado 1 → alto bias, baja varianza. Con grado 15 → bajo bias, **altísima** varianza (las grises están por todos lados).
+
+### Cómo manejarlo
+
+| Problema | Síntoma | Antídoto |
+|----------|---------|----------|
+| **Underfit** (bias alto) | Mal en train *y* test | Más features, modelo más complejo, menos regularización |
+| **Overfit** (varianza alta) | Bien en train, mal en test | Más datos, regularización, dropout, early stopping, menos features |
+| **Ambos altos** | Todo mal | Revisá el problema, probablemente features mal elegidas |
+
+## Checklist antes de confiar en un modelo {#sec-checklist}
+
+::: {.callout-tip icon=false}
+### ✅ Previo al entrenamiento
+- [ ] ¿Cómo se recolectaron los datos? ¿Hay filtros implícitos?
+- [ ] ¿La muestra representa a la población donde se va a usar?
+- [ ] ¿Las etiquetas reflejan el fenómeno o un proxy?
+- [ ] ¿Hay componente temporal? El split, ¿lo respeta?
+
+### ✅ Durante feature engineering
+- [ ] Cada feature: ¿está disponible al momento de predicción real?
+- [ ] ¿Algún cálculo usa el target o información futura?
+- [ ] Preprocesamientos: ¿`fit` solo en train?
+
+### ✅ En evaluación
+- [ ] ¿El score es demasiado bueno?
+- [ ] ¿Feature importance tiene sentido o hay un sospechoso?
+- [ ] ¿Rompí por subgrupos para ver Simpson?
+- [ ] ¿Cuántas veces miré el test set?
+:::
+
+## Para seguir
+
+- 👉 [Regresión Lineal](../02-modelos-lineales/regresion-lineal.qmd) — ahora con la cabeza protegida contra los sesgos, entrá al primer modelo.
+- 👉 [Probabilidad](probabilidad.qmd) — si te saltaste, las herramientas formales detrás de "sesgo" y "varianza".

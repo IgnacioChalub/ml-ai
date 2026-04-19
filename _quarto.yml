@@ -1,0 +1,96 @@
+project:
+  type: website
+  output-dir: _site
+
+website:
+  title: "ML · Apuntes visuales"
+  description: "Aprendiendo machine learning desde fundamentos con visualizaciones interactivas"
+  page-navigation: true
+  back-to-top-navigation: true
+  navbar:
+    background: primary
+    search: true
+    left:
+      - text: "Inicio"
+        href: index.qmd
+      - text: "Fundamentos"
+        menu:
+          - 01-fundamentos/intro.qmd
+          - 01-fundamentos/probabilidad.qmd
+          - 01-fundamentos/sesgos.qmd
+      - text: "Modelos Lineales"
+        menu:
+          - 02-modelos-lineales/regresion-lineal.qmd
+          - 02-modelos-lineales/gradient-descent.qmd
+          - 02-modelos-lineales/regresion-logistica.qmd
+      - text: "Más Modelos"
+        menu:
+          - 03-mas-modelos/glm-newton.qmd
+          - 03-mas-modelos/arboles.qmd
+          - 03-mas-modelos/ensembles.qmd
+      - text: "No Supervisado"
+        menu:
+          - 04-no-supervisado/clustering.qmd
+          - 04-no-supervisado/embeddings.qmd
+  sidebar:
+    style: "docked"
+    search: true
+    collapse-level: 2
+    contents:
+      - text: "Inicio"
+        href: index.qmd
+      - section: "Fundamentos"
+        contents:
+          - 01-fundamentos/intro.qmd
+          - 01-fundamentos/probabilidad.qmd
+          - 01-fundamentos/sesgos.qmd
+      - section: "Modelos Lineales"
+        contents:
+          - 02-modelos-lineales/regresion-lineal.qmd
+          - 02-modelos-lineales/gradient-descent.qmd
+          - 02-modelos-lineales/regresion-logistica.qmd
+      - section: "Más Modelos"
+        contents:
+          - 03-mas-modelos/glm-newton.qmd
+          - 03-mas-modelos/arboles.qmd
+          - 03-mas-modelos/ensembles.qmd
+      - section: "No Supervisado"
+        contents:
+          - 04-no-supervisado/clustering.qmd
+          - 04-no-supervisado/embeddings.qmd
+  page-footer:
+    left: "Apuntes personales de ML · Hecho con [Quarto](https://quarto.org)"
+    right: "© 2026"
+
+format:
+  html:
+    theme:
+      light: [cosmo, styles.scss]
+      dark: [darkly, styles-dark.scss]
+    toc: true
+    toc-depth: 3
+    toc-location: right
+    toc-title: "En esta página"
+    code-fold: show
+    code-tools: true
+    code-copy: true
+    code-overflow: wrap
+    highlight-style: github
+    fig-align: center
+    fig-responsive: true
+    smooth-scroll: true
+    anchor-sections: true
+    link-external-newwindow: true
+    html-math-method: mathjax
+    include-in-header:
+      text: |
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+execute:
+  freeze: auto
+  echo: true
+  warning: false
+
+lang: es

@@ -1,0 +1,435 @@
+---
+title: "Regresión Lineal"
+subtitle: "Ajustar la mejor recta a un conjunto de puntos"
+description: "El modelo más simple de ML: qué hace, por qué funciona, cómo se resuelve y dónde falla."
+jupyter: python3
+---
+
+[Fundamentos]{.topic-pill} [Regresión]{.topic-pill} [Supervisado]{.topic-pill}
+
+## Intuición {#sec-intuicion}
+
+::: {.intuicion-block}
+Tenés puntos en un plano. Querés pasar **la mejor recta** entre ellos. La regresión lineal es literalmente eso: encontrar los dos números (pendiente e intercepto) que hacen que la recta "pase lo más cerca posible" de todos los puntos.
+
+¿Qué significa *"lo más cerca posible"*? Ahí es donde aparece la **función de pérdida** — una manera de medir qué tan mal le va a una recta candidata. Después buscamos la recta que minimiza esa pérdida.
+:::
+
+Es el modelo más simple, pero la lógica se repite en **todo** ML: proponer una familia de funciones, elegir una métrica de error, encontrar los parámetros que la minimizan.
+
+## El problema, formalmente {#sec-formalizacion}
+
+Tenemos $n$ pares de datos $(x_i, y_i)$ y queremos modelar $y$ como función lineal de $x$:
+
+$$
+\hat{y} = w \cdot x + b
+$$
+
+- $w$ es la **pendiente** (slope / peso)
+- $b$ es el **intercepto** (bias)
+- $\hat{y}$ es nuestra predicción
+
+El error en un punto es $y_i - \hat{y}_i$. Queremos que **todos** los errores sean chicos, así que promediamos sus cuadrados:
+
+$$
+\mathcal{L}(w, b) = \frac{1}{n} \sum_{i=1}^{n} (y_i - (w \cdot x_i + b))^2
+$$
+
+Esto se llama **Error Cuadrático Medio** (MSE, *Mean Squared Error*). Elevar al cuadrado tiene dos motivos:
+
+1. Los errores positivos y negativos no se cancelan entre sí.
+2. Penaliza más fuerte los errores grandes (un error de 4 pesa 16× más que uno de 1).
+
+::: {.callout-note}
+## ¿Por qué MSE y no otro?
+MSE no es arbitrario: asumir errores gaussianos + maximizar la *likelihood* da exactamente MSE. Volvemos a este puente en la página de [probabilidad](../01-fundamentos/probabilidad.qmd#sec-mle).
+:::
+
+### La solución cerrada
+
+#### ¿Por qué "derivar e igualar a cero"?
+
+Queremos encontrar los $w, b$ que **minimizan** $\mathcal{L}(w, b)$. La pregunta es: ¿cómo se encuentra el mínimo de una función?
+
+La clave es una propiedad que probablemente recordás de cálculo I:
+
+::: {.intuicion-block}
+En un mínimo (o máximo) local de una función suave, **la pendiente es cero**.
+:::
+
+Pensalo gráficamente: si estás en un mínimo y la pendiente fuera *negativa*, moviéndote un poquito a la derecha bajarías más — entonces no estabas en el mínimo. Si fuera *positiva*, moviéndote a la izquierda bajarías más. La única manera de estar en un mínimo es que la pendiente sea **exactamente cero** — ni baja a un lado ni al otro.
+
+Y la **pendiente** de una función, en un punto, no es otra cosa que su **derivada** ahí.
+
+Entonces la receta es:
+
+1. Escribir la función de pérdida $\mathcal{L}(w, b)$.
+2. Calcular sus derivadas parciales $\partial \mathcal{L}/\partial w$ y $\partial \mathcal{L}/\partial b$.
+3. Igualarlas a cero — estamos buscando donde la pendiente "en dirección $w$" y "en dirección $b$" es cero simultáneamente.
+4. Resolver ese sistema de ecuaciones y despejar $w$ y $b$.
+
+#### ¿Por qué con regresión lineal esto da el mínimo global?
+
+Ojo con un detalle: derivada igual a cero identifica **mínimos, máximos y puntos silla** por igual. En general, resolver $\nabla \mathcal{L} = 0$ te da *candidatos*, no necesariamente el óptimo que buscás.
+
+Para regresión lineal tenemos suerte: $\mathcal{L}(w, b)$ es una **función cuadrática convexa** — un paraboloide, un tazón perfecto. Un tazón tiene un único punto donde la pendiente es cero, y ese punto es el **mínimo global**. Por eso la receta funciona sin ambigüedad.
+
+(En modelos más complejos — redes neuronales, por ejemplo — la pérdida **no** es convexa, hay múltiples puntos con derivada cero, y encontrar el mínimo global deja de ser tan directo. Ahí aparece [gradient descent](gradient-descent.qmd) como método iterativo.)
+
+#### ¿Qué son las "derivadas parciales"?
+
+Tenemos dos parámetros ($w$ y $b$), así que la función de pérdida **no** es una curva 2D — es una superficie 3D (dos ejes horizontales para $w$ y $b$, un eje vertical para $\mathcal{L}$). Y una superficie tiene **pendiente en distintas direcciones**.
+
+La **derivada parcial respecto a $w$** mide la pendiente de la superficie cuando te movés sólo en dirección $w$, **manteniendo $b$ fijo**. Se calcula como una derivada de toda la vida, tratando $b$ como si fuera un número constante. Idem al revés.
+
+En el mínimo, tiene que ser cero la pendiente en **ambas** direcciones:
+
+$$
+\frac{\partial \mathcal{L}}{\partial w} = 0 \quad \text{y} \quad \frac{\partial \mathcal{L}}{\partial b} = 0
+$$
+
+Eso te da **dos ecuaciones con dos incógnitas** — un sistema que se resuelve con álgebra común. Vamos.
+
+#### Derivada parcial respecto a $w$
+
+Partimos de:
+
+$$
+\mathcal{L}(w, b) = \frac{1}{n} \sum_{i=1}^n (y_i - w x_i - b)^2
+$$
+
+Derivamos respecto a $w$ tratando $b$, $x_i$ e $y_i$ como constantes. Usamos la **regla de la cadena** (derivada de $f(\cdot)^2$ por la derivada de lo de adentro):
+
+$$
+\frac{\partial \mathcal{L}}{\partial w} = \frac{1}{n} \sum_i \underbrace{2(y_i - w x_i - b)}_{\text{derivada del cuadrado}} \cdot \underbrace{(-x_i)}_{\text{derivada del interior respecto a } w}
+$$
+
+Juntando:
+
+$$
+\frac{\partial \mathcal{L}}{\partial w} = -\frac{2}{n} \sum_i x_i (y_i - w x_i - b)
+$$
+
+#### Derivada parcial respecto a $b$
+
+Mismo procedimiento, ahora derivando respecto a $b$ (tratando $w$, $x_i$, $y_i$ como constantes). La derivada del interior respecto a $b$ es $-1$:
+
+$$
+\frac{\partial \mathcal{L}}{\partial b} = \frac{1}{n} \sum_i 2(y_i - w x_i - b) \cdot (-1) = -\frac{2}{n} \sum_i (y_i - w x_i - b)
+$$
+
+#### El sistema de ecuaciones
+
+Igualando ambas a cero (podemos tirar el $-2/n$ común — no cambia las soluciones):
+
+$$
+\begin{cases}
+\sum_i x_i (y_i - w x_i - b) = 0 \quad \text{(1)} \\
+\sum_i (y_i - w x_i - b) = 0 \quad \text{(2)}
+\end{cases}
+$$
+
+**De la ecuación (2)** sale despejar $b$ fácil. Distribuyendo la suma y dividiendo por $n$:
+
+$$
+\bar{y} - w \bar{x} - b = 0 \quad \Longrightarrow \quad \boxed{b^* = \bar{y} - w \bar{x}}
+$$
+
+donde $\bar{x} = \frac{1}{n}\sum x_i$ y $\bar{y} = \frac{1}{n}\sum y_i$.
+
+**Sustituimos** $b^*$ en la ecuación (1) y despejamos $w$. Después de un poco de álgebra (te lo dejo como ejercicio — spoiler: $x_i - \bar{x}$ aparece naturalmente):
+
+$$
+\boxed{w^* = \frac{\sum_i (x_i - \bar{x})(y_i - \bar{y})}{\sum_i (x_i - \bar{x})^2}}
+$$
+
+¡Listo! Dos derivadas parciales, dos ecuaciones, sistema resuelto.
+
+#### Lectura geométrica
+
+Esas fórmulas no son arbitrarias, tienen significado:
+
+- El numerador de $w^*$ es la **covarianza muestral** entre $x$ e $y$ (sin dividir por $n$). Mide cómo varían juntas.
+- El denominador es la **varianza muestral** de $x$. Mide cuánto varía $x$.
+- Entonces $w^*$ es literalmente **"cuánto cambia $y$ en promedio cuando $x$ cambia una unidad"** — que es exactamente lo que una pendiente debería ser.
+- Y $b^* = \bar{y} - w^* \bar{x}$ dice que la recta **siempre pasa por el punto** $(\bar{x}, \bar{y})$ — el centro de masa de los datos.
+
+#### Generalización: ecuaciones normales
+
+¿Y si en vez de un feature tenemos muchos? $\hat{y} = w_1 x_1 + w_2 x_2 + \dots + w_d x_d + b$.
+
+El mismo proceso — derivadas parciales respecto a **cada** $w_j$ y respecto a $b$, igualar a cero, sistema de ecuaciones — se puede escribir mucho más compacto en forma matricial. El resultado se llama **ecuaciones normales**:
+
+$$
+\boldsymbol{\theta}^* = (X^\top X)^{-1} X^\top y
+$$
+
+Donde $X$ es la matriz de features (una fila por ejemplo, una columna por feature, más una columna de unos para el bias) y $\boldsymbol{\theta}$ contiene todos los $w_j$ y $b$ apilados.
+
+Una línea de álgebra lineal y el problema está resuelto. No siempre es práctico (si $X^\top X$ es casi singular, o si $d$ es enorme) — y por eso existe **gradient descent**, un método iterativo que vemos en la [próxima página](gradient-descent.qmd).
+
+## Visualización interactiva {#sec-viz}
+
+Movelos y mirá cómo responden la recta, los residuos y el MSE. El **valor óptimo** está marcado para que tengas referencia.
+
+```{ojs}
+//| echo: false
+viewof params = Inputs.form({
+  w: Inputs.range([-3, 5], {value: 1.0, step: 0.05, label: "Pendiente (w)"}),
+  b: Inputs.range([-5, 8], {value: 0.0, step: 0.1, label: "Intercepto (b)"})
+})
+```
+
+```{ojs}
+//| echo: false
+data = {
+  // Datos sintéticos reproducibles
+  const rng = d3.randomLcg(42);
+  const noise = d3.randomNormal.source(rng)(0, 1.2);
+  const trueW = 2.1;
+  const trueB = 1.5;
+  const n = 40;
+  return Array.from({length: n}, () => {
+    const x = rng() * 10 - 5;
+    const y = trueW * x + trueB + noise();
+    return {x, y};
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+// MSE óptimo calculado con las ecuaciones normales
+optimal = {
+  const n = data.length;
+  const xBar = d3.mean(data, d => d.x);
+  const yBar = d3.mean(data, d => d.y);
+  const num = d3.sum(data, d => (d.x - xBar) * (d.y - yBar));
+  const den = d3.sum(data, d => (d.x - xBar) ** 2);
+  const w = num / den;
+  const b = yBar - w * xBar;
+  const mse = d3.mean(data, d => (d.y - (w * d.x + b)) ** 2);
+  return {w, b, mse};
+}
+```
+
+```{ojs}
+//| echo: false
+currentMSE = d3.mean(data, d => (d.y - (params.w * d.x + params.b)) ** 2)
+```
+
+```{ojs}
+//| echo: false
+html`
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0;">
+  <div style="padding: 1rem; background: #f0f9ff; border-radius: 0.5rem; text-align: center;">
+    <div style="font-size: 0.85rem; color: #6b7280;">MSE actual</div>
+    <div style="font-size: 1.8rem; font-weight: 600; color: #2E5EAA;">${currentMSE.toFixed(3)}</div>
+  </div>
+  <div style="padding: 1rem; background: #f0fdf4; border-radius: 0.5rem; text-align: center;">
+    <div style="font-size: 0.85rem; color: #6b7280;">MSE óptimo</div>
+    <div style="font-size: 1.8rem; font-weight: 600; color: #1E8E3E;">${optimal.mse.toFixed(3)}</div>
+  </div>
+</div>
+`
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: 720,
+  height: 420,
+  grid: true,
+  marginLeft: 50,
+  x: {label: "x →", domain: [-6, 6]},
+  y: {label: "↑ y", domain: [-12, 16]},
+  marks: [
+    // Residuos (líneas verticales del punto a la recta)
+    Plot.ruleX(data, {
+      x: "x",
+      y1: "y",
+      y2: d => params.w * d.x + params.b,
+      stroke: "#dc2626",
+      strokeOpacity: 0.35,
+      strokeWidth: 1.5
+    }),
+    // Recta óptima de referencia (gris)
+    Plot.line(
+      d3.range(-6, 6.1, 0.1).map(x => ({x, y: optimal.w * x + optimal.b})),
+      {x: "x", y: "y", stroke: "#94a3b8", strokeDasharray: "4,3", strokeWidth: 1.5}
+    ),
+    // Recta actual
+    Plot.line(
+      d3.range(-6, 6.1, 0.1).map(x => ({x, y: params.w * x + params.b})),
+      {x: "x", y: "y", stroke: "#2E5EAA", strokeWidth: 3}
+    ),
+    // Puntos
+    Plot.dot(data, {x: "x", y: "y", fill: "#1f2937", r: 4, stroke: "white", strokeWidth: 1.5}),
+    Plot.ruleY([0], {stroke: "#d1d5db"}),
+    Plot.ruleX([0], {stroke: "#d1d5db"})
+  ]
+})
+```
+
+::: {.callout-tip}
+## Qué mirar
+- Cada línea roja es un **residuo** — la distancia vertical del punto a tu recta.
+- El MSE es el promedio de esas distancias al cuadrado.
+- La recta gris punteada es la **óptima** (la que tu fórmula cerrada encontraría).
+- Fijate cómo aumentos pequeños en $w$ mueven mucho la recta en los extremos. Eso tiene consecuencias: outliers lejanos tienen un tirón enorme.
+:::
+
+### La superficie de pérdida
+
+$\mathcal{L}(w, b)$ vive en 3D: dos parámetros más una altura (el error). Como el MSE en regresión lineal es una función **cuadrática convexa**, la superficie es un paraboloide — un tazón perfecto con un único mínimo. Por eso siempre podemos resolverla.
+
+```{ojs}
+//| echo: false
+lossGrid = {
+  const wRange = d3.range(-3, 5, 0.2);
+  const bRange = d3.range(-5, 8, 0.3);
+  const grid = [];
+  for (const ww of wRange) {
+    for (const bb of bRange) {
+      const loss = d3.mean(data, d => (d.y - (ww * d.x + bb)) ** 2);
+      grid.push({w: ww, b: bb, loss});
+    }
+  }
+  return grid;
+}
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: 720,
+  height: 380,
+  marginLeft: 55,
+  x: {label: "Pendiente (w) →"},
+  y: {label: "↑ Intercepto (b)"},
+  color: {
+    type: "log",
+    scheme: "viridis",
+    legend: true,
+    label: "MSE"
+  },
+  marks: [
+    Plot.raster(lossGrid, {x: "w", y: "b", fill: "loss", interpolate: "nearest"}),
+    Plot.contour(lossGrid, {x: "w", y: "b", fill: "loss", stroke: "white", strokeOpacity: 0.3, thresholds: 12}),
+    // Punto actual
+    Plot.dot([{w: params.w, b: params.b}], {x: "w", y: "b", fill: "red", r: 7, stroke: "white", strokeWidth: 2}),
+    // Óptimo
+    Plot.dot([{w: optimal.w, b: optimal.b}], {x: "w", y: "b", fill: "#22c55e", r: 7, stroke: "white", strokeWidth: 2}),
+    Plot.text([{w: optimal.w, b: optimal.b}], {x: "w", y: "b", text: () => "  óptimo", fill: "#22c55e", textAnchor: "start", dy: -10, fontWeight: "bold"})
+  ]
+})
+```
+
+El punto **rojo** es tu recta actual. El **verde** es el mínimo. Las curvas son iso-contornos de MSE: todos los puntos de la misma curva dan el mismo error. Si moviéras la recta con un slider en "vivo", el punto rojo se movería por este mapa.
+
+## Código {#sec-codigo}
+
+### From scratch con NumPy
+
+```{python}
+import numpy as np
+import matplotlib.pyplot as plt
+
+rng = np.random.default_rng(42)
+n = 40
+X = rng.uniform(-5, 5, n)
+true_w, true_b = 2.1, 1.5
+y = true_w * X + true_b + rng.normal(0, 1.2, n)
+
+# Ecuaciones normales forma simple
+x_mean, y_mean = X.mean(), y.mean()
+w = np.sum((X - x_mean) * (y - y_mean)) / np.sum((X - x_mean) ** 2)
+b = y_mean - w * x_mean
+
+mse = np.mean((y - (w * X + b)) ** 2)
+print(f"w = {w:.4f}  (verdadero: {true_w})")
+print(f"b = {b:.4f}  (verdadero: {true_b})")
+print(f"MSE = {mse:.4f}")
+```
+
+### Versión matricial (generaliza a múltiples features)
+
+```{python}
+# Agregamos columna de 1s para el bias
+X_design = np.column_stack([np.ones(n), X])          # shape (n, 2)
+theta = np.linalg.inv(X_design.T @ X_design) @ X_design.T @ y
+print(f"θ = [b, w] = {theta}")
+```
+
+En la práctica **nunca** se invierte `X^T X` literalmente — numéricamente es inestable. Se usa `np.linalg.lstsq` o descomposición QR:
+
+```{python}
+theta_qr, *_ = np.linalg.lstsq(X_design, y, rcond=None)
+print(f"θ (lstsq) = {theta_qr}")
+```
+
+### Con scikit-learn
+
+```{python}
+from sklearn.linear_model import LinearRegression
+
+model = LinearRegression()
+model.fit(X.reshape(-1, 1), y)
+print(f"coef = {model.coef_[0]:.4f}")
+print(f"intercept = {model.intercept_:.4f}")
+print(f"R² = {model.score(X.reshape(-1, 1), y):.4f}")
+```
+
+### Visualización del resultado
+
+```{python}
+#| fig-cap: "Recta ajustada con su región de confianza aproximada."
+fig, ax = plt.subplots(figsize=(8, 4.5))
+xs = np.linspace(-5, 5, 100)
+ax.scatter(X, y, alpha=0.7, edgecolor="white", s=50, label="datos")
+ax.plot(xs, w * xs + b, color="#2E5EAA", lw=2.5, label=f"ajuste: y = {w:.2f}x + {b:.2f}")
+ax.plot(xs, true_w * xs + true_b, color="#22c55e", lw=1.5, ls="--", label=f"verdadera: y = {true_w}x + {true_b}")
+ax.set_xlabel("x"); ax.set_ylabel("y"); ax.legend(); ax.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
+```
+
+## Trampas comunes {#sec-trampas}
+
+::: {.callout-warning}
+### 1. Outliers
+
+MSE eleva al cuadrado. Un solo punto muy lejos de la recta puede **dominar** la pérdida y tirar el ajuste hacia él.
+
+**Soluciones**: usar regresión robusta (Huber loss, RANSAC) o detectar y tratar outliers antes.
+:::
+
+::: {.callout-warning}
+### 2. Relación no lineal
+
+Si la verdadera relación es $y = x^2$ o $\log x$, una recta va a ser un mal ajuste — y podés ni darte cuenta mirando solo el $R^2$.
+
+**Diagnóstico**: graficar los **residuos vs $x$**. Si ves patrón (curva, embudo), la linealidad está rota.
+:::
+
+::: {.callout-warning}
+### 3. Multicolinealidad (en múltiples features)
+
+Si dos features están fuertemente correlacionadas, $X^\top X$ se vuelve casi singular y los coeficientes se vuelven **inestables** (cambios chicos en los datos → coeficientes totalmente distintos).
+
+**Soluciones**: eliminar features redundantes, usar PCA, o **regularización** (Ridge, Lasso).
+:::
+
+::: {.callout-warning}
+### 4. Heterocedasticidad
+
+MSE asume que la varianza del error es constante en todo $x$. Si el ruido crece con $x$ (embudo en el scatter), el modelo da intervalos de confianza mal calibrados.
+
+**Diagnóstico**: de nuevo, residuos vs $x$. Si ves un embudo, hay un problema.
+:::
+
+## Dónde seguir
+
+- 👉 [Gradient Descent](gradient-descent.qmd) — el método iterativo que resuelve el problema cuando la fórmula cerrada no escala.
+- 👉 [Regresión Logística](regresion-logistica.qmd) — misma idea, pero para clasificar en lugar de predecir un número.
+- 👉 [Probabilidad / MLE](../01-fundamentos/probabilidad.qmd#sec-mle) — por qué MSE es la elección "correcta" bajo ciertos supuestos.

@@ -1,0 +1,196 @@
+---
+title: "Intro a Machine Learning"
+subtitle: "Qué es, qué no es, y dónde encaja cada técnica"
+description: "El panorama general antes de zambullirse. Supervisado vs no supervisado, el pipeline estándar, y un mapa mental para orientarse."
+jupyter: python3
+---
+
+[Fundamentos]{.topic-pill} [Conceptos]{.topic-pill}
+
+## ¿Qué es machine learning? {#sec-que-es}
+
+::: {.intuicion-block}
+Un programa tradicional es: **reglas + datos → respuestas**. El programador escribe las reglas.
+
+Machine learning invierte eso: **datos + respuestas → reglas**. Le das al sistema ejemplos de input-output, y descubre el patrón por sí mismo.
+:::
+
+La definición más citada es la de Tom Mitchell (1997):
+
+> Un programa **aprende** de experiencia $E$, respecto a una tarea $T$ y una medida de performance $P$, si su performance en $T$ — medida por $P$ — mejora con la experiencia $E$.
+
+Menos abstractamente: entrenás un modelo con datos, y ves si predice mejor que al azar (y si lo generaliza a datos nuevos).
+
+### ¿Cuándo ML y cuándo no?
+
+ML brilla cuando:
+- **Las reglas son difíciles de escribir a mano** (reconocer una cara, traducir texto, detectar fraude sutil).
+- **Tenés muchos ejemplos etiquetados** (o al menos muchos datos).
+- **Podés tolerar respuestas probabilísticas, no deterministas**.
+
+ML es una **mala** elección cuando:
+- El problema tiene reglas claras y se resuelve con lógica explícita (un `if`).
+- No tenés datos suficientes ni forma de conseguirlos.
+- Necesitás garantías fuertes y explicabilidad total.
+- Ya existe una solución analítica o física conocida.
+
+## El pipeline estándar {#sec-pipeline}
+
+Casi todo proyecto de ML sigue esta forma:
+
+```
+┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐
+│  Datos   │ → │   EDA    │ → │ Features │ → │  Modelo  │ → │Evaluación│ → │Despliegue│
+└──────────┘   └──────────┘   └──────────┘   └──────────┘   └──────────┘   └──────────┘
+      ↑                                                           │
+      └────────────────────── iterar ────────────────────────────┘
+```
+
+1. **Datos** — conseguirlos, limpiarlos, entenderlos. Suele ser el 60-80% del trabajo real.
+2. **EDA** (análisis exploratorio) — entender distribuciones, correlaciones, missing values.
+3. **Feature engineering** — transformar variables crudas en inputs útiles para el modelo.
+4. **Modelo** — elegir una familia (lineal, árbol, red neuronal, etc.) y entrenar.
+5. **Evaluación** — medir en datos que el modelo **no vio** (validación / test).
+6. **Despliegue** — ponerlo en producción; monitorearlo porque el mundo cambia.
+
+### División train / validation / test
+
+Regla no negociable: **nunca** evalúes tu modelo en los mismos datos con los que entrenó.
+
+| Split | Uso | Típico |
+|-------|-----|--------|
+| **Train** | Aprender los parámetros | 60-80% |
+| **Validation** | Elegir hiperparámetros, comparar modelos | 10-20% |
+| **Test** | Estimar el error final, **se mira una vez** | 10-20% |
+
+Si mirás el test muchas veces y ajustás decisiones según lo que ves, el test deja de ser "no visto" — es el [sesgo](sesgos.qmd) más sutil y más cometido.
+
+## Los tres grandes paradigmas {#sec-paradigmas}
+
+```{=html}
+<div class="card-grid">
+  <div class="concept-card">
+    <span class="card-emoji">🏷️</span>
+    <h3>Supervisado</h3>
+    <p>Tenés inputs <em>x</em> <strong>y</strong> las respuestas correctas <em>y</em>. El modelo aprende <em>x → y</em>. Ejemplos: predecir precio de una casa, clasificar emails como spam.</p>
+  </div>
+  <div class="concept-card">
+    <span class="card-emoji">🔍</span>
+    <h3>No supervisado</h3>
+    <p>Solo tenés <em>x</em>, sin respuestas. El modelo descubre estructura: clusters, dimensiones relevantes, densidades. Ejemplos: segmentación de clientes, PCA, detección de anomalías.</p>
+  </div>
+  <div class="concept-card">
+    <span class="card-emoji">🎮</span>
+    <h3>Refuerzo</h3>
+    <p>Un agente toma acciones en un entorno y recibe recompensas. Aprende políticas que maximizan la recompensa acumulada. Ejemplos: juegos (AlphaGo), robots, LLMs con RLHF.</p>
+  </div>
+</div>
+```
+
+### Sub-categorías dentro de supervisado
+
+Dos tipos según el target $y$:
+
+- **Regresión** — $y$ es un número real continuo (precio, temperatura, edad). → *Regresión lineal, árboles de regresión, redes*.
+- **Clasificación** — $y$ es una categoría discreta (spam/no spam, gato/perro/pájaro). → *Regresión logística, SVM, árboles, redes*.
+
+## Bias, varianza y overfitting {#sec-bias-varianza}
+
+**Bias** (sesgo) y **varianza** son las dos fuentes de error que determinan qué tan bien un modelo generaliza a datos nuevos. Entenderlas es el concepto más importante de ML — todo lo demás (regularización, ensembles, cross-validation, dropout) son herramientas para navegar el balance entre ellas.
+
+### Bias: cuando el modelo es demasiado simple
+
+**Bias** es el error que viene de suposiciones demasiado simples sobre los datos. Un modelo con bias alto no logra capturar los patrones reales: está **subajustado** (*underfitting*).
+
+Ejemplo clásico: intentar ajustar una línea recta a datos que claramente siguen una curva. Por más datos que le des, va a seguir fallando — no porque le falten ejemplos, sino porque la familia de funciones que el modelo considera (rectas) **no tiene la flexibilidad** para representar la realidad.
+
+Síntoma práctico: **mal en train y mal en test**. El modelo ni siquiera aprende los datos que ya vio.
+
+### Varianza: cuando el modelo es demasiado sensible
+
+**Varianza** es lo opuesto: el error que viene de ser demasiado sensible a los datos específicos de entrenamiento. Un modelo con alta varianza aprende no solo la señal sino también el **ruido**, y rinde excelente en entrenamiento pero mal en datos nuevos. Eso es **sobreajuste** (*overfitting*).
+
+Una forma de pensarlo: si entrenás el mismo tipo de modelo con subsets distintos de tus datos y obtenés modelos **muy diferentes** entre sí, tu modelo tiene alta varianza. Está aprendiendo cosas idiosincrásicas del subset, no del fenómeno real.
+
+Síntoma práctico: **excelente en train, mal en test**. Brecha grande entre ambos.
+
+### El trade-off
+
+En general, bajar uno **sube el otro**:
+
+- **Modelo muy simple** (regresión lineal, árbol de profundidad 2) → bias alto, varianza baja.
+- **Modelo muy complejo** (árbol sin límite de profundidad, red neuronal enorme sin regularización) → bias bajo, varianza alta.
+
+El error total de generalización se puede descomponer (aproximadamente) como:
+
+$$
+\text{Error} = \text{Bias}^2 + \text{Varianza} + \text{Ruido irreducible}
+$$
+
+El **ruido irreducible** es el piso teórico — variabilidad inherente al fenómeno que ningún modelo puede eliminar. El objetivo es encontrar el **punto dulce** donde la suma de Bias² + Varianza es mínima.
+
+### Analogía del tiro al blanco
+
+Imaginá que tirás dardos a un blanco. Cada "tiro" es entrenar el modelo con un dataset distinto; el "blanco" es la función verdadera.
+
+| Escenario | Dónde caen los dardos | Diagnóstico |
+|-----------|----------------------|-------------|
+| **Alto bias, baja varianza** | Todos agrupados pero lejos del centro | Modelo sistemáticamente equivocado |
+| **Bajo bias, alta varianza** | Dispersos por todos lados, en promedio cerca del centro | Modelo impredecible |
+| **Alto bias, alta varianza** | Dispersos **y** lejos del centro | El peor caso |
+| **Bajo bias, baja varianza** | Agrupados en el centro | El ideal |
+
+El **bias** es qué tan lejos está el *promedio* de los dardos del centro. La **varianza** es qué tan dispersos están entre sí.
+
+### Cómo navegar el trade-off
+
+| Herramienta | Qué hace | Cuándo usarla |
+|---|---|---|
+| **Más datos** | ↓ Varianza sin tocar bias | Casi siempre ayuda — si los podés conseguir |
+| **Regularización** (L1, L2, dropout, early stopping) | ↑ Bias, ↓ Varianza | Detectás overfitting |
+| **Modelo más simple / menos features** | ↑ Bias, ↓ Varianza | Pocos datos, overfit severo |
+| **Modelo más complejo / más features** | ↓ Bias, ↑ Varianza | Detectás underfitting |
+| **Cross-validation** | No cambia el modelo, mide bien ambos | Para decidir qué aplicar de lo anterior |
+| **Bagging** (Random Forest) | ↓ Varianza promediando modelos | Modelos base ya tienen bajo bias |
+| **Boosting** (XGBoost, LightGBM) | ↓ Bias combinando modelos débiles | Modelos base tienen baja varianza |
+
+### Diagnóstico práctico (el que usás mil veces)
+
+Mirá la **brecha** entre train error y test error:
+
+- **Train alto = test alto** → bias alto → probá modelo más flexible, más features, entrenar más.
+- **Train bajo, test alto** → varianza alta → más datos, regularización, menos features, early stopping.
+- **Train alto, test bajo** → algo raro pasa (leakage invertido, test set con distribución distinta).
+- **Train bajo, test bajo** → 🎉 estás en el punto dulce.
+
+## Vocabulario que vas a ver en todos lados {#sec-vocabulario}
+
+| Término | Qué significa |
+|---------|---------------|
+| **Feature** | Input del modelo (columna de la tabla) |
+| **Label / target** | La respuesta correcta que querés predecir |
+| **Sample / instance** | Una fila de datos, un ejemplo |
+| **Parameters** | Lo que el modelo aprende de los datos (pesos) |
+| **Hyperparameters** | Lo que vos elegís antes de entrenar (learning rate, profundidad) |
+| **Loss function** | Cuánto le erra el modelo — lo que minimizás |
+| **Gradient** | Pendiente de la loss respecto a los parámetros |
+| **Epoch** | Una pasada completa por todo el dataset |
+| **Batch** | Subconjunto de datos usado en una iteración |
+| **Inference** | Usar el modelo ya entrenado para predecir |
+
+## Roadmap de estos apuntes {#sec-roadmap}
+
+El orden con el que vamos:
+
+1. **Probabilidad** — la base formal. Sin esto, MLE y Bayes parecen magia.
+2. **Sesgos estadísticos** — los errores silenciosos que arruinan modelos. Antes de entrenar algo, saber dónde mirar.
+3. **Regresión lineal** — el "hola mundo". Acá todo lo demás se conecta.
+4. **Gradient descent** — el motor de casi todo ML moderno.
+5. **Regresión logística** — cómo convertir regresión en clasificación.
+
+Con esto cubierto, el salto a árboles, SVM, redes neuronales y más es natural: todos usan las mismas ideas con funciones distintas.
+
+## Para seguir
+
+- 👉 [Probabilidad](probabilidad.qmd) — la base matemática.
+- 👉 [Sesgos estadísticos](sesgos.qmd) — cómo los datos te mienten.

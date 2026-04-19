@@ -1,0 +1,205 @@
+---
+title: "Ensembles: Bagging, Boosting, Stacking"
+subtitle: "Combinando muchos modelos para que el conjunto sea mejor que cada uno"
+description: "Las tres grandes estrategias para combinar modelos. AdaBoost, Gradient Boosting y XGBoost explicados conceptualmente."
+jupyter: python3
+---
+
+[Supervisado]{.topic-pill} [Ensembles]{.topic-pill} [Meta-modelos]{.topic-pill}
+
+## Intuición {#sec-intuicion}
+
+::: {.intuicion-block}
+Hay un chiste viejo en estadística: *"si le preguntás a una persona, tiene cierto error. Si le preguntás a 100 personas y promediás, te equivocás menos — siempre que esas 100 personas no estén todas copiándose"*.
+
+Esa es la idea de los **ensembles**: entrenar muchos modelos y combinarlos para que el conjunto sea mejor que cualquier modelo individual. Tres estrategias principales: **bagging**, **boosting** y **stacking**. Cada una combina modelos de un modo distinto — y en la práctica, especialmente en datos tabulares, los ensembles (sobre todo **XGBoost** y **LightGBM**) son los modelos que más ganan competencias.
+:::
+
+Vamos una por una.
+
+## Bagging: muchos modelos en paralelo, promediados
+
+**Bagging** = **B**ootstrap **AGG**regat**ING**. La idea en tres pasos:
+
+1. Creá $N$ datasets distintos haciendo **bootstrap** (sampling con reemplazo) del original.
+2. Entrená un modelo en cada uno. Son modelos **independientes entre sí** — se pueden entrenar en paralelo.
+3. Al predecir, **promediá** (regresión) o **votá** (clasificación) las predicciones.
+
+### ¿Por qué ayuda?
+
+Cada modelo individual tiene **varianza** — aprende patrones específicos del subset que vio. Al promediar muchos modelos **decorrelacionados**, la varianza del promedio es menor que la de cada uno (la media de muchas muestras es menos ruidosa que cada muestra).
+
+El más famoso es **Random Forest**, que ya vimos en [árboles](arboles.qmd). Pero bagging se puede aplicar a cualquier modelo base — la receta genérica está en `sklearn.ensemble.BaggingClassifier`.
+
+### Cuándo usar bagging
+
+- Modelos base con **alta varianza** (árboles profundos). Bagging los "calma".
+- **NO** ayuda mucho con modelos de bajo varianza (regresión logística regularizada) porque no hay varianza para reducir.
+- Se paraleliza trivialmente, los $N$ modelos se entrenan independientemente.
+
+## Boosting: modelos en cadena, cada uno arregla al anterior
+
+**Boosting** invierte la lógica de bagging. En vez de entrenar modelos **independientes**, los entrena **en secuencia** — y cada modelo nuevo **se enfoca en los errores del anterior**.
+
+::: {.callout-tip}
+## Analogía: estudiar para un examen
+Imaginate que un amigo estudia un tema, hace un simulacro y tiene 60% de aciertos. El segundo amigo mira qué preguntas se equivocó el primero y se especializa en esas. Un tercero se ocupa de las que el primer y segundo amigo no resolvieron bien. Entre los tres, te cubren el examen mucho mejor que cualquiera solo. Eso es boosting: **cada modelo se especializa en lo que los anteriores no supieron resolver**.
+:::
+
+### AdaBoost (el abuelo del boosting)
+
+El primer boosting que popularizó la idea. En cada ronda:
+
+1. Entrenás un modelo débil (típicamente un árbol de 1 nivel, un *stump*).
+2. Identificás los ejemplos que **se equivocó**.
+3. En la próxima ronda, esos ejemplos reciben **más peso** — el modelo nuevo les presta más atención.
+4. Al final, la predicción es una **suma ponderada** de todos los modelos — los que acertaron más obtienen más peso.
+
+Matemáticamente, AdaBoost minimiza una pérdida exponencial usando un método tipo gradient descent en "espacio de funciones". Pero la intuición alcanza: **aumentar el peso de los ejemplos difíciles**.
+
+### Gradient Boosting: la versión general
+
+AdaBoost es un caso particular de algo más general: **Gradient Boosting**. La idea: tratar el ensemble como una **función** que vas mejorando a lo largo del entrenamiento, cada ronda agregando un nuevo modelo que corrige el residuo actual.
+
+Más concretamente:
+
+1. Empezás con un modelo constante (ej. la media de $y$).
+2. Calculás los **residuos**: $r_i = y_i - F(x_i)$, donde $F$ es la predicción actual.
+3. Entrenás un modelo débil para **predecir esos residuos**.
+4. Sumás ese modelo a $F$ (con un learning rate $\eta$ chico).
+5. Repetís.
+
+La conexión con gradient descent: los residuos son el **gradiente negativo** de la loss (MSE en regresión). Cada nuevo modelo te da un paso en esa dirección — pero en lugar de mover **parámetros**, agregás una **función**. Por eso se llama "gradient boosting": es GD, pero en el espacio de funciones.
+
+::: {.callout-note}
+## Una cuenta chiquita
+Para MSE: $\mathcal{L}(F) = \frac{1}{n}\sum (y_i - F(x_i))^2$, entonces $-\partial \mathcal{L}/\partial F(x_i) = y_i - F(x_i)$. **El gradiente es literalmente el residuo**. Para otras losses (log-loss, etc.) sigue funcionando la idea, aunque el "residuo" se generaliza.
+:::
+
+### XGBoost, LightGBM, CatBoost
+
+Son implementaciones de gradient boosting con **optimizaciones extra** para velocidad y precisión:
+
+- **XGBoost**: el más famoso. Agrega regularización explícita, manejo de missing values, sparsidad, paralelismo. Dominó competencias de Kaggle por años.
+- **LightGBM**: crece los árboles por hojas (no por niveles), mucho más rápido en datasets grandes.
+- **CatBoost**: manejo especial de variables categóricas sin necesidad de one-hot.
+
+Para tabular, **gradient boosting sigue siendo state-of-the-art**, a menudo por encima de redes neuronales.
+
+### Hiperparámetros que importan en XGBoost
+
+| Parámetro | Qué hace | Efecto |
+|---|---|---|
+| `n_estimators` | Rondas de boosting | ↑ → más capacidad, más overfit |
+| `learning_rate` (`eta`) | Cuánto pesa cada árbol nuevo | ↓ → más conservador, necesita más rondas |
+| `max_depth` | Profundidad de cada árbol | 3-8 típico; más = overfit |
+| `subsample` | Fracción de filas por ronda | <1 reduce overfit (estilo bagging) |
+| `colsample_bytree` | Fracción de columnas por ronda | <1 decorrela los árboles |
+| `reg_alpha`, `reg_lambda` | Regularización L1/L2 sobre los pesos de las hojas | ↑ → más regularización |
+
+Regla general para tunear: `learning_rate` bajo (0.05-0.1) + `n_estimators` alto (500-2000) + `max_depth` moderado (5-7) + early stopping.
+
+### Código: comparando boosting vs bagging
+
+```{python}
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.model_selection import cross_val_score
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, AdaBoostClassifier
+
+X, y = make_classification(n_samples=2000, n_features=20, n_informative=10, random_state=0)
+
+models = {
+    "Random Forest (bagging)": RandomForestClassifier(n_estimators=200, random_state=0),
+    "AdaBoost": AdaBoostClassifier(n_estimators=200, random_state=0),
+    "Gradient Boosting": GradientBoostingClassifier(n_estimators=200, random_state=0),
+}
+
+for name, m in models.items():
+    score = cross_val_score(m, X, y, cv=5).mean()
+    print(f"{name:28s}: {score:.4f}")
+```
+
+## Stacking: modelos que aprenden a combinar otros modelos
+
+Bagging y boosting combinan modelos con reglas **fijas** (promedio / suma ponderada). **Stacking** va más allá: entrena un modelo **meta** que aprende **cómo combinar** las predicciones de los modelos base.
+
+### La receta
+
+1. Entrená $K$ modelos base distintos (ej. regresión logística, Random Forest, XGBoost, SVM).
+2. Usá cada uno para generar **predicciones out-of-fold** sobre el training set (con cross-validation, para evitar leakage).
+3. Esas $K$ predicciones son las **features** de un nuevo dataset.
+4. Entrená un **meta-modelo** (típicamente simple: regresión logística) sobre esas features + la etiqueta original.
+5. En predicción: cada modelo base predice, el meta combina esas predicciones para la salida final.
+
+El meta-modelo aprende cosas como: *"cuando Random Forest dice 0.8 pero XGBoost dice 0.4, confiar más en XGBoost en este tipo de ejemplos"*. Es más poderoso que promedio ponderado fijo.
+
+### Cuándo vale la pena
+
+- En competencias de Kaggle: casi siempre. Típicamente la primera capa combina 5-10 modelos distintos y la segunda es un modelo simple.
+- En producción: **raramente**. El overhead de entrenar y mantener muchos modelos, más el modelo meta, complica el pipeline. Pequeñas mejoras de performance no suelen compensar.
+
+### Código
+
+```{python}
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import StackingClassifier
+from sklearn.svm import SVC
+
+estimators = [
+    ("rf", RandomForestClassifier(n_estimators=100, random_state=0)),
+    ("gb", GradientBoostingClassifier(n_estimators=100, random_state=0)),
+    ("svm", SVC(probability=True, random_state=0)),
+]
+stack = StackingClassifier(estimators=estimators, final_estimator=LogisticRegression())
+
+score = cross_val_score(stack, X, y, cv=5).mean()
+print(f"Stacking: {score:.4f}")
+```
+
+## Bagging vs Boosting vs Stacking: cuándo cada uno
+
+| | Bagging | Boosting | Stacking |
+|---|---|---|---|
+| Cómo combina | Promedio/voto de modelos paralelos | Suma de modelos secuenciales | Meta-modelo sobre predicciones base |
+| Qué reduce | Varianza | Bias (principalmente) | Ambos, si los base son diversos |
+| Modelos base ideales | Alto-varianza (árboles profundos) | Bajo-varianza, débiles (stumps) | Diversos entre sí |
+| Paralelizable | Sí | No (inherentemente secuencial) | Los base sí, el meta no |
+| Riesgo de overfit | Bajo | Medio-alto (requiere regularización) | Alto (muchos parámetros) |
+| Ejemplo canónico | Random Forest | XGBoost, LightGBM | *"Blend" final en Kaggle* |
+| Cuándo elegir | Dataset medio, RF como baseline | **State-of-the-art en tabular** | Competencia, no producción |
+
+## Trampas comunes
+
+::: {.callout-warning}
+### 1. Boosting sin regularización + demasiadas rondas = overfit garantizado
+Boosting tiene "infinita capacidad" — con suficientes rondas, memoriza cualquier dataset. Usá `early_stopping_rounds` con un set de validación siempre.
+:::
+
+::: {.callout-warning}
+### 2. Learning rate muy alto en boosting
+Con LR alto el modelo "avanza mucho" por ronda y es fácil que oscile / overfit. Regla general: **LR bajo + muchas rondas** es mejor que LR alto + pocas rondas.
+:::
+
+::: {.callout-warning}
+### 3. No hacer cross-validation en stacking
+Si usás las predicciones de los modelos base en **el mismo training** para entrenar el meta, tenés **data leakage** (el meta aprende a confiar en predicciones artificialmente buenas). Siempre predicciones out-of-fold.
+:::
+
+::: {.callout-warning}
+### 4. Comparar ensembles con hiperparámetros default
+Un XGBoost default puede ser peor que un Random Forest default simplemente porque los defaults son menos agresivos. Tunear siempre antes de concluir "X es peor que Y".
+:::
+
+## Lo que te llevás
+
+- **Bagging**: muchos modelos paralelos, promediás. Reduce varianza. Ej: Random Forest.
+- **Boosting**: modelos en secuencia, cada uno corrige los errores del anterior. Reduce bias. Ej: AdaBoost, **XGBoost / LightGBM** (state-of-the-art tabular).
+- **Gradient Boosting** = GD en espacio de funciones: cada árbol nuevo apunta al gradiente de la loss actual.
+- **Stacking**: un meta-modelo aprende a combinar predicciones de modelos base distintos. Potente en competencias, poco común en producción.
+- En **datos tabulares**, el default ganador sigue siendo **gradient boosting tuneado**.
+
+## Para seguir
+
+- 👉 [Árboles de decisión](arboles.qmd) — los modelos base de bagging y boosting.
+- 👉 [Clustering (k-means)](../04-no-supervisado/clustering.qmd) — saliendo del mundo supervisado.

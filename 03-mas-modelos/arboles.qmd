@@ -1,0 +1,276 @@
+---
+title: "Árboles de decisión + Random Forest"
+subtitle: "Saliendo del mundo lineal: preguntas encadenadas y votación de muchos árboles"
+description: "Cómo un árbol parte el espacio con preguntas sí/no, qué mide la impureza, por qué un solo árbol sobreajusta, y cómo Random Forest arregla eso promediando árboles."
+jupyter: python3
+---
+
+[Supervisado]{.topic-pill} [No lineal]{.topic-pill} [Ensembles]{.topic-pill}
+
+## Intuición {#sec-intuicion}
+
+::: {.intuicion-block}
+Hasta ahora vimos modelos **lineales**: suman features con pesos, y listo. Funcionan cuando el mundo se separa bien con rectas — pero el mundo real casi nunca es así.
+
+Un **árbol de decisión** tiene otra filosofía: toma decisiones como un humano razonando, **haciendo una secuencia de preguntas sí/no**. *"¿La edad es mayor a 30?"* → *"¿El ingreso es mayor a 50k?"* → *"Predicción: aprobar crédito"*. Cada pregunta parte el dataset en dos; tras muchas preguntas encadenadas llegás a una hoja con una predicción.
+:::
+
+Un árbol aprendido se lee **exactamente** como un diagrama de flujo. Y eso es parte de su atractivo: a diferencia de una red neuronal, **podés ver por qué toma cada decisión**.
+
+## Cómo construye un árbol
+
+El algoritmo es **recursivo** y codicioso. En cada paso:
+
+1. **Mirá todos los posibles cortes** en todas las features. Para una feature continua, los cortes candidatos son los valores intermedios entre puntos consecutivos; para categóricas, agrupar categorías.
+2. **Evaluá cada corte**: ¿qué tan "limpios" quedan los dos grupos resultantes?
+3. **Elegí el mejor corte** — el que maximiza la "pureza" de los hijos.
+4. **Repetí** en cada hoja nueva hasta algún criterio de parada (profundidad máxima, mínimo de ejemplos, etc.).
+
+::: {.callout-tip}
+## Analogía: el juego de "20 preguntas"
+En el juego clásico, querés adivinar una palabra haciendo la menor cantidad de preguntas sí/no. La mejor estrategia es hacer preguntas que **partan el espacio de posibilidades por la mitad** — así cada pregunta elimina la mayor cantidad de incertidumbre. Eso es exactamente lo que hace un árbol al elegir cada corte.
+:::
+
+### ¿Qué significa "limpio"?
+
+La métrica clásica para clasificación es **Gini**:
+
+$$
+\text{Gini}(S) = 1 - \sum_k p_k^2
+$$
+
+donde $p_k$ es la proporción de la clase $k$ en el nodo $S$.
+
+Casos extremos para 2 clases:
+
+- Todos de la misma clase → $p_1 = 1, p_2 = 0$ → Gini = $1 - (1 + 0) = 0$ (**puro**).
+- 50/50 mezclado → $p_1 = p_2 = 0.5$ → Gini = $1 - (0.25 + 0.25) = 0.5$ (**máximo desorden**).
+
+Otra métrica popular es **entropía**:
+
+$$
+H(S) = -\sum_k p_k \log_2 p_k
+$$
+
+Las dos dan árboles muy parecidos. La de regresión es diferente: se usa **varianza** del target en el nodo (los cortes minimizan la varianza de $y$ dentro de cada hoja).
+
+### El corte que "gana"
+
+Para un corte candidato que parte $S$ en $S_L$ y $S_R$, la **ganancia de información** es:
+
+$$
+\text{Gain} = \text{Impureza}(S) - \left[ \frac{|S_L|}{|S|} \text{Impureza}(S_L) + \frac{|S_R|}{|S|} \text{Impureza}(S_R) \right]
+$$
+
+Se pondera por el tamaño de cada hijo. El corte que maximiza esa ganancia es el elegido.
+
+### Ejemplo numérico mini
+
+Supongamos 10 puntos con la feature "edad" y etiqueta "compra/no compra":
+
+| Edad | Compra? |
+|:---:|:---:|
+| 20 | no |
+| 22 | no |
+| 25 | sí |
+| 28 | no |
+| 30 | sí |
+| 35 | sí |
+| 40 | sí |
+| 45 | sí |
+| 50 | no |
+| 55 | sí |
+
+Gini del nodo raíz: 6 síes, 4 noes → $1 - (0.6^2 + 0.4^2) = 0.48$.
+
+Corte candidato: edad ≤ 30:
+- $S_L$ (4 puntos): 1 sí, 3 no → Gini = $1 - (0.25^2 + 0.75^2) = 0.375$
+- $S_R$ (6 puntos): 5 sí, 1 no → Gini = $1 - (0.833^2 + 0.167^2) = 0.278$
+- Gini ponderado: $0.4 \cdot 0.375 + 0.6 \cdot 0.278 = 0.317$
+
+Ganancia: $0.48 - 0.317 = 0.163$ ✓
+
+El algoritmo prueba **todos** los cortes y se queda con el de mayor ganancia.
+
+## Fronteras de decisión: no son rectas
+
+A diferencia de los modelos lineales, un árbol parte el espacio en **rectángulos alineados con los ejes** (cada corte es sobre **una** feature a la vez). La frontera resulta escalonada — puede aproximar formas complejas pero siempre con escalones.
+
+```{python}
+#| fig-cap: "Un árbol parte el plano en rectángulos. La frontera es escalonada."
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.datasets import make_moons
+
+X, y = make_moons(n_samples=200, noise=0.25, random_state=0)
+tree = DecisionTreeClassifier(max_depth=5, random_state=0).fit(X, y)
+
+xx, yy = np.meshgrid(np.linspace(-2, 3, 300), np.linspace(-1.5, 2, 300))
+Z = tree.predict(np.c_[xx.ravel(), yy.ravel()]).reshape(xx.shape)
+
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.contourf(xx, yy, Z, levels=[-0.5, 0.5, 1.5], colors=["#dbeafe", "#fecaca"], alpha=0.7)
+ax.scatter(X[y==0, 0], X[y==0, 1], c="#2563eb", edgecolor="white", s=40, label="clase 0")
+ax.scatter(X[y==1, 0], X[y==1, 1], c="#dc2626", edgecolor="white", s=40, label="clase 1")
+ax.set_xlabel("x₁"); ax.set_ylabel("x₂"); ax.legend()
+ax.set_title("Frontera de un árbol (max_depth=5)")
+plt.tight_layout(); plt.show()
+```
+
+## El problema del árbol solitario: overfitting
+
+Un árbol sin restricciones **puede partir hasta que cada hoja tenga un solo ejemplo**. En ese punto, tu training accuracy es 100% — y el árbol memorizó el ruido. En test rinde mal. **Altísima varianza**, en el lenguaje de [bias/varianza](../01-fundamentos/intro.qmd#sec-bias-varianza).
+
+Dos maneras comunes de frenarlo:
+
+**Pre-pruning (parar antes)**: fijás límites al momento de construirlo.
+
+- `max_depth`: profundidad máxima.
+- `min_samples_split`: no partir nodos con pocos ejemplos.
+- `min_samples_leaf`: no crear hojas con pocos ejemplos.
+- `max_leaf_nodes`: cantidad total máxima de hojas.
+
+**Post-pruning (podar después)**: construís el árbol completo y después cortás ramas que no mejoran mucho en validación. `ccp_alpha` en sklearn.
+
+```{python}
+#| fig-cap: "Un árbol sin restricciones memoriza. Con max_depth razonable, generaliza."
+from sklearn.model_selection import cross_val_score
+
+scores_train, scores_test = [], []
+depths = range(1, 16)
+for d in depths:
+    t = DecisionTreeClassifier(max_depth=d, random_state=0)
+    t.fit(X, y)
+    scores_train.append(t.score(X, y))
+    scores_test.append(cross_val_score(t, X, y, cv=5).mean())
+
+fig, ax = plt.subplots(figsize=(8, 4))
+ax.plot(depths, scores_train, "o-", label="train", color="#2E5EAA")
+ax.plot(depths, scores_test, "s-", label="test (CV)", color="#dc2626")
+ax.set_xlabel("max_depth"); ax.set_ylabel("accuracy")
+ax.legend(); ax.grid(alpha=0.3)
+plt.tight_layout(); plt.show()
+```
+
+## Random Forest: el bosque arregla el árbol
+
+Un solo árbol profundo tiene **mucha varianza**: cambiás un poquito los datos y te sale un árbol totalmente distinto. ¿Y si en vez de entrenar **uno**, entrenamos **cientos** de árboles un poquito distintos entre sí y **promediamos** sus predicciones?
+
+Esa es la idea de **Random Forest** — un caso particular de **bagging**.
+
+### Los dos trucos que hacen la diferencia
+
+1. **Bootstrap sampling**: cada árbol se entrena con un sample **con reemplazo** del dataset. O sea, cada árbol ve un dataset ligeramente distinto.
+2. **Features aleatorias por split**: en cada corte, el árbol sólo puede elegir entre un **subconjunto aleatorio** de features (típico: $\sqrt{d}$ features). Esto fuerza a que los árboles **no se parezcan mucho** — si no, todos elegirían el mismo primer corte y serían iguales.
+
+Después, para predecir:
+
+- **Clasificación**: cada árbol vota una clase; se queda la más votada (mayoría).
+- **Regresión**: se promedia la predicción numérica de todos los árboles.
+
+### Por qué funciona
+
+Promediar muchos modelos **alto-varianza pero bajo-bias** reduce la varianza sin tocar el bias. Teoría:
+
+$$
+\text{Var}\left(\frac{1}{N}\sum_i \hat{f}_i\right) = \frac{\sigma^2}{N} + \rho \sigma^2 \left(1 - \frac{1}{N}\right)
+$$
+
+- $\sigma^2$: varianza de un árbol solo.
+- $\rho$: correlación entre árboles.
+- Cuanto **menos correlacionados** los árboles, más baja la varianza total.
+
+Los dos trucos (bootstrap + feature subsampling) sirven **específicamente para decorrelacionar** los árboles. Por eso no alcanza con solo hacer bootstrap — si todos ven las mismas features ordenadas por importancia, van a tender a partir por lo mismo y estar correlacionados.
+
+### En código
+
+```{python}
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.tree import DecisionTreeClassifier
+
+X, y = make_moons(n_samples=400, noise=0.3, random_state=0)
+
+tree_score = cross_val_score(DecisionTreeClassifier(random_state=0), X, y, cv=5).mean()
+rf_score = cross_val_score(RandomForestClassifier(n_estimators=200, random_state=0), X, y, cv=5).mean()
+
+print(f"Un árbol:       {tree_score:.3f}")
+print(f"Random Forest:  {rf_score:.3f}")
+```
+
+### Hiperparámetros que importan
+
+| Parámetro | Qué hace | Valor típico |
+|---|---|---|
+| `n_estimators` | Cantidad de árboles | 100-500 (más = mejor pero más lento; saturás después de un punto) |
+| `max_depth` | Profundidad máxima de cada árbol | `None` (crecen completos) o 10-20 |
+| `max_features` | Features a considerar por split | `"sqrt"` para clasificación, `1/3` para regresión |
+| `min_samples_leaf` | Mínimo de ejemplos por hoja | 1-5 |
+
+### Feature importance gratis
+
+Un bonus de los árboles: te dicen cuáles features son más útiles. Se calcula como la **reducción promedio de impureza** que aportó cada feature a través de todos los splits.
+
+```{python}
+#| fig-cap: "Feature importance de Random Forest. Features de ruido quedan cerca de cero."
+from sklearn.datasets import make_classification
+
+X, y = make_classification(n_samples=1000, n_features=10, n_informative=3,
+                           n_redundant=0, random_state=0)
+rf = RandomForestClassifier(n_estimators=200, random_state=0).fit(X, y)
+
+fig, ax = plt.subplots(figsize=(8, 3.5))
+ax.bar(range(10), rf.feature_importances_, color="#2E5EAA")
+ax.set_xlabel("feature #"); ax.set_ylabel("importancia")
+ax.set_title("Random Forest feature importance")
+plt.tight_layout(); plt.show()
+```
+
+## Árboles vs modelos lineales: ¿cuándo cada uno?
+
+| Característica | Lineales (lineal / logística) | Árboles / RF |
+|---|---|---|
+| Interpretabilidad | Alta (coeficientes) | Media (árbol solo); baja (forest) |
+| Relaciones no lineales | No (sin feature engineering) | Sí, naturalmente |
+| Interacciones entre features | No (sin $x_1 \cdot x_2$ a mano) | Sí, naturalmente |
+| Escala de features | Importa (normalizar) | No importa |
+| Maneja datos mixtos (num + cat) | Mal (one-hot) | Muy bien |
+| Extrapolación fuera del rango | Sí (extrapola la recta) | **No** (predice el valor de la hoja, aunque $x$ quede lejos de los datos) |
+| Rendimiento típico tabular | Bien con buen feature engineering | **Muy bien** out of the box |
+
+En problemas **tabulares** (filas y columnas, sin imagen/audio/texto), Random Forest y XGBoost suelen ser la mejor elección por default. En imagen/audio/texto ganan las redes neuronales por varias calles.
+
+## Trampas comunes
+
+::: {.callout-warning}
+### 1. No normalices features antes de un árbol
+Los árboles son insensibles a la escala (solo miran thresholds). Normalizar es **innecesario y rompe la interpretabilidad**.
+:::
+
+::: {.callout-warning}
+### 2. Feature importance puede mentir
+Features correlacionadas se "reparten" la importancia. Si tenés dos features altamente correlacionadas, es posible que una aparezca con importancia alta y la otra cero — aunque sean igualmente útiles. Cuidado con interpretar importance como "causalidad".
+:::
+
+::: {.callout-warning}
+### 3. RF no extrapola
+Si tu data de training tiene $x \in [0, 10]$ y en producción llega $x = 100$, un RF predice como si $x = 10$ (el último valor que vio). Un modelo lineal extrapola la recta. Ninguno de los dos sabe realmente qué pasa afuera, pero es distinto el failure mode.
+:::
+
+::: {.callout-warning}
+### 4. Clases desbalanceadas
+Random Forest con `class_weight="balanced"` funciona mejor con desbalanceo que sin. Métricas apropiadas (F1, AUC) en lugar de accuracy.
+:::
+
+## Lo que te llevás
+
+- Un **árbol de decisión** aprende una secuencia de preguntas sí/no, y en cada nivel elige la pregunta que **maximiza pureza** de los hijos (Gini / entropía / varianza).
+- La frontera de un árbol es **escalonada**, no una recta — puede capturar no linealidades e interacciones naturalmente.
+- Un árbol solo **sobreajusta** mucho (alta varianza). Lo frenás con `max_depth`, `min_samples_leaf`, etc.
+- **Random Forest** entrena muchos árboles con bootstrap + features aleatorias, y promedia. Reduce varianza sin tocar bias.
+- Son el default para **datos tabulares**; no necesitan normalizar y manejan tipos mixtos bien.
+
+## Para seguir
+
+- 👉 [Ensembles: Bagging, Boosting, Stacking](ensembles.qmd) — RF es un caso de bagging; boosting es la otra gran familia (XGBoost, LightGBM).
+- 👉 [GLM + Newton](glm-newton.qmd) — los modelos lineales más allá de lineal y logística.

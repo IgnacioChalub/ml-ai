@@ -1,0 +1,210 @@
+/*-- scss:defaults --*/
+
+// Paleta suave inspirada en Distill / Observable
+$primary: #2E5EAA;
+$secondary: #6C757D;
+$success: #1E8E3E;
+$info: #1A73E8;
+$warning: #F9AB00;
+$danger: #D93025;
+
+$body-color: #1f2328;
+$body-bg: #ffffff;
+$link-color: #2E5EAA;
+
+$font-family-sans-serif: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+$font-family-monospace: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+$headings-font-weight: 600;
+$headings-color: #0f172a;
+
+$border-radius: 0.5rem;
+$border-radius-lg: 0.75rem;
+
+/*-- scss:rules --*/
+
+body {
+  font-size: 17px;
+  line-height: 1.7;
+  letter-spacing: -0.003em;
+}
+
+h1, h2, h3, h4 {
+  letter-spacing: -0.02em;
+  margin-top: 2.2rem;
+  margin-bottom: 1rem;
+}
+
+h1.title {
+  font-size: 2.6rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  background: linear-gradient(135deg, #2E5EAA 0%, #7B2CBF 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.subtitle {
+  font-size: 1.2rem;
+  color: #6b7280;
+  font-weight: 400;
+}
+
+// Callouts más suaves
+.callout {
+  border-radius: 0.75rem !important;
+  border-left-width: 4px !important;
+  margin: 1.5rem 0;
+}
+
+.callout-note { background: #eff6ff; }
+.callout-tip { background: #f0fdf4; }
+.callout-warning { background: #fffbeb; }
+.callout-important { background: #fef2f2; }
+
+// Bloques de código
+pre, code {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.92em;
+}
+
+div.sourceCode {
+  border-radius: 0.6rem;
+  border: 1px solid #e5e7eb;
+}
+
+// Tablas
+table {
+  border-collapse: collapse;
+}
+
+thead {
+  border-bottom: 2px solid $primary;
+}
+
+// Sidebar
+.sidebar-navigation {
+  font-size: 0.93rem;
+}
+
+.sidebar-item-text {
+  font-weight: 500;
+}
+
+.sidebar-item.active > .sidebar-item-container {
+  background: linear-gradient(90deg, rgba(46,94,170,0.1), transparent);
+  border-left: 3px solid $primary;
+}
+
+// Cards (landing)
+.concept-card {
+  display: block;
+  padding: 1.4rem 1.6rem;
+  border-radius: 0.8rem;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  transition: all 0.2s ease;
+  text-decoration: none !important;
+  color: inherit;
+  height: 100%;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+    border-color: $primary;
+  }
+
+  .card-emoji {
+    font-size: 1.8rem;
+    margin-bottom: 0.4rem;
+    display: block;
+  }
+
+  h3 {
+    margin-top: 0;
+    margin-bottom: 0.4rem;
+    font-size: 1.1rem;
+    color: $primary;
+  }
+
+  p {
+    margin: 0;
+    color: #6b7280;
+    font-size: 0.95rem;
+  }
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+  margin: 2rem 0;
+}
+
+// Badge / pills
+.topic-pill {
+  display: inline-block;
+  padding: 0.2rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  background: #e0e7ff;
+  color: #3730a3;
+  margin-right: 0.3rem;
+}
+
+// Secciones con fondo suave para intuición
+.intuicion-block {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  padding: 1.5rem 1.8rem;
+  border-radius: 0.8rem;
+  margin: 1.5rem 0;
+  border-left: 4px solid #0ea5e9;
+}
+
+// Hero del index
+.hero {
+  text-align: center;
+  padding: 3rem 1rem 2rem;
+  margin-bottom: 2rem;
+}
+
+.hero h1 {
+  font-size: 3.2rem;
+  margin-bottom: 1rem;
+}
+
+.hero p.lead {
+  font-size: 1.25rem;
+  color: #6b7280;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+// Ecuaciones centradas
+.math.display {
+  overflow-x: auto;
+  padding: 0.4rem 0;
+}
+
+// Inputs interactivos (OJS)
+.ojs-in-a-box-waiting-for-module-import {
+  min-height: 50px;
+}
+
+form.oi {
+  padding: 1rem;
+  background: #f9fafb;
+  border-radius: 0.5rem;
+  margin: 1rem 0;
+}
+
+// Mejor separación entre secciones
+section.level2 {
+  margin-top: 3rem;
+}
+
+section.level3 {
+  margin-top: 2rem;
+}

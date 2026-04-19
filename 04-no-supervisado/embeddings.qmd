@@ -1,0 +1,204 @@
+---
+title: "Embeddings y t-SNE"
+subtitle: "Aplastando muchas dimensiones a un mapa 2D que se puede mirar"
+description: "Qué son los embeddings, por qué PCA no alcanza para todo, y cómo t-SNE preserva vecindarios para visualizar clusters."
+jupyter: python3
+---
+
+[No supervisado]{.topic-pill} [Visualización]{.topic-pill} [Reducción de dimensionalidad]{.topic-pill}
+
+## Intuición {#sec-intuicion}
+
+::: {.intuicion-block}
+Tenés datos con **muchas dimensiones**: imágenes de 784 píxeles, documentos con miles de palabras, usuarios con cientos de features. No podés *ver* nada en 784D. ¿Cómo te das una idea de qué estructura tiene tu data?
+
+La respuesta: **reducir** esas dimensiones a 2 o 3 preservando la estructura lo mejor posible, y **graficarlo**. Ese mapa resultante es un **embedding**: una representación compacta donde puntos parecidos en el mundo original quedan cerca en el mundo reducido.
+:::
+
+Hay muchas técnicas. Vamos a ver dos, y por qué la segunda existe a pesar de que la primera ya funciona:
+
+- **PCA** — lineal, rápido, interpretable, limitado.
+- **t-SNE** — no lineal, preserva estructura local, ideal para visualizar clusters.
+
+## Primero: ¿qué es un embedding?
+
+Un **embedding** es una función $f: \mathbb{R}^d \to \mathbb{R}^{d'}$ con $d' \ll d$ que mapea cada punto de alta dimensión a uno de baja dimensión, **preservando algo importante**.
+
+Qué significa "preservar algo importante" depende de la técnica:
+
+- PCA preserva la **varianza** (las direcciones donde los datos más se dispersan).
+- t-SNE preserva **vecindarios** (quién está cerca de quién).
+- Autoencoders preservan **información reconstructible** (se puede volver al original con poca pérdida).
+
+"Embedding" también tiene otro uso famoso: los **word embeddings** (Word2Vec, GloVe, BERT) — representaciones densas de palabras en $\mathbb{R}^{300}$ o similar. Misma idea conceptual.
+
+## Recap rápido: PCA
+
+Sin entrar en detalle (daría para su propia página), PCA encuentra las **direcciones ortogonales** en las que los datos tienen **mayor varianza**, y proyecta sobre las primeras $d'$.
+
+**Ventajas**:
+
+- Lineal → rápido y escalable.
+- Interpretable — cada componente es una combinación lineal de features originales.
+- Reversible — podés reconstruir aproximaciones del original.
+
+**Limitación clave**: es **lineal**. Si la estructura real de los datos es un "rollo enrollado" (manifold curvo), PCA lo aplana mal y los clusters se mezclan.
+
+```{python}
+#| fig-cap: "PCA vs t-SNE en MNIST (1000 dígitos). PCA deja clusters superpuestos; t-SNE los separa."
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.datasets import load_digits
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+
+digits = load_digits()
+X, y = digits.data[:1000], digits.target[:1000]
+
+pca = PCA(n_components=2).fit_transform(X)
+tsne = TSNE(n_components=2, random_state=0, perplexity=30, init="pca").fit_transform(X)
+
+fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+for ax, emb, title in zip(axes, [pca, tsne], ["PCA (lineal)", "t-SNE (no lineal)"]):
+    sc = ax.scatter(emb[:, 0], emb[:, 1], c=y, cmap="tab10", s=15, alpha=0.8)
+    ax.set_title(title)
+    ax.set_xticks([]); ax.set_yticks([])
+plt.colorbar(sc, ax=axes[-1], label="dígito")
+plt.tight_layout(); plt.show()
+```
+
+La diferencia visual es dramática. t-SNE separa los 10 dígitos en clusters casi perfectamente visibles. PCA deja todo superpuesto.
+
+## t-SNE: preservando vecindarios
+
+**t-SNE** (*t-distributed Stochastic Neighbor Embedding*) no intenta preservar **distancias globales** — intenta preservar **qué puntos son vecinos**. Por eso es tan bueno para visualizar clusters.
+
+### La idea en tres pasos
+
+1. **En el espacio original** (alta dimensión): para cada par de puntos $(x_i, x_j)$, definís una probabilidad $p_{ij}$ de que sean "vecinos". Puntos cercanos → probabilidad alta; puntos lejanos → probabilidad baja. La escala de "cercano" está controlada por un hiperparámetro llamado **perplexity**.
+
+2. **En el espacio de baja dimensión**: para cada par $(y_i, y_j)$, definís una probabilidad $q_{ij}$ similar, usando una **distribución t de Student** con colas pesadas (esto es crucial — te cuento por qué abajo).
+
+3. **Minimizás la divergencia KL** entre $p$ y $q$ — o sea, movés los puntos $y_i$ para que las probabilidades de vecindario en baja dimensión se parezcan a las de alta dimensión.
+
+La optimización se hace con gradient descent, y el algoritmo corre por bastantes iteraciones (por eso t-SNE es lento en datasets grandes).
+
+### Por qué la distribución t (en lugar de gaussiana)
+
+La t de Student tiene **colas más pesadas** que la normal. Eso significa que permite que puntos "moderadamente lejos" estén un poco más lejos en el mapa sin penalizar fuerte. Esto genera **separación** entre clusters — si usaras gaussianas en las dos puntas, los clusters tenderían a colapsar juntos.
+
+Es el truco que hace que t-SNE dé esos mapas tan lindos con clusters bien separados.
+
+### Perplexity: el hiperparámetro clave
+
+**Perplexity** es, intuitivamente, el "número efectivo de vecinos" que t-SNE considera para cada punto.
+
+- Perplexity baja (5-10): se enfoca en estructura muy local. Clusters pequeños bien separados, pero la estructura global se pierde.
+- Perplexity alta (50-100): considera más contexto. Clusters grandes se mantienen pero los chicos se pueden mezclar.
+- Rango típico: **5 a 50**.
+
+Regla general: probá varios valores de perplexity. No hay uno "correcto".
+
+```{python}
+#| fig-cap: "El mismo dataset con distintos valores de perplexity. Los mapas cambian, lo cual es normal."
+fig, axes = plt.subplots(1, 3, figsize=(14, 4.5))
+for ax, perp in zip(axes, [5, 30, 100]):
+    emb = TSNE(n_components=2, perplexity=perp, init="pca", random_state=0).fit_transform(X)
+    ax.scatter(emb[:, 0], emb[:, 1], c=y, cmap="tab10", s=15, alpha=0.8)
+    ax.set_title(f"perplexity = {perp}")
+    ax.set_xticks([]); ax.set_yticks([])
+plt.tight_layout(); plt.show()
+```
+
+## Cómo leer un mapa t-SNE (y cómo NO leerlo)
+
+Esta es la parte sutil. t-SNE preserva **vecindarios locales**, no distancias globales. Eso tiene consecuencias importantes.
+
+### ✅ Podés concluir:
+
+- **Hay clusters** → probablemente existen en los datos.
+- **Puntos cercanos dentro de un cluster** → son parecidos en el original.
+- **Clusters bien separados** → hay una diferencia clara entre esos grupos.
+
+### ❌ NO podés concluir:
+
+- **Distancia entre clusters en el mapa ≠ disimilitud real**. Dos clusters que en el mapa están "al lado" no son necesariamente más parecidos que dos clusters "lejos".
+- **Tamaño de un cluster en el mapa ≠ tamaño real**. t-SNE expande clusters densos y contrae clusters dispersos. No interpretés áreas.
+- **Forma del cluster ≠ forma real**. Si ves un cluster elongado, puede ser un artefacto de la optimización.
+
+::: {.callout-warning}
+## "How to use t-SNE effectively" — el paper clásico
+El paper de Martin Wattenberg et al. tiene ejemplos visuales geniales mostrando cómo t-SNE puede *engañarte* si no lo leés con cuidado. Vale la pena mirarlo.
+:::
+
+## UMAP: el primo más moderno
+
+**UMAP** (*Uniform Manifold Approximation and Projection*) es una técnica más reciente que resuelve varios problemas de t-SNE:
+
+- **Más rápido** en datasets grandes.
+- **Preserva mejor la estructura global**: distancias entre clusters son más interpretables.
+- **Determinístico con seed fijo** (t-SNE siempre es un poco aleatorio).
+- **Puede usarse para transformar datos nuevos** después del entrenamiento (t-SNE no).
+
+En la práctica, UMAP ha reemplazado a t-SNE en muchos casos. Pero t-SNE sigue siendo útil y es el que aparece primero en tutoriales históricamente.
+
+```{python}
+#| fig-cap: "UMAP (cuando instalás el paquete) tiende a dar resultados similares a t-SNE pero más rápido."
+# pip install umap-learn
+try:
+    from umap import UMAP
+    umap_emb = UMAP(n_components=2, random_state=0).fit_transform(X)
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.scatter(umap_emb[:, 0], umap_emb[:, 1], c=y, cmap="tab10", s=15, alpha=0.8)
+    ax.set_title("UMAP (n_components=2)")
+    ax.set_xticks([]); ax.set_yticks([])
+    plt.tight_layout(); plt.show()
+except ImportError:
+    print("Instalá con: pip install umap-learn")
+```
+
+## Cuándo usar qué
+
+| Técnica | Cuándo |
+|---------|--------|
+| **PCA** | Feature extraction antes de un modelo, ejes interpretables necesarios, datos lineales, velocidad |
+| **t-SNE** | Visualización exploratoria, descubrir clusters, paper deadline |
+| **UMAP** | Igual que t-SNE pero más grande / más rápido / necesitás transformar datos nuevos |
+| **Autoencoders** | Cuando querés aprender una representación **útil para una tarea downstream** |
+
+## Trampas comunes
+
+::: {.callout-warning}
+### 1. Usar t-SNE para features de un modelo
+t-SNE está diseñado para **visualizar**. Las coordenadas $(y_i)$ que produce **no** son buenas features para entrenar un modelo supervisado — el método no es reversible y los valores son arbitrarios. Para features, usá PCA o autoencoders.
+:::
+
+::: {.callout-warning}
+### 2. Comparar dos corridas de t-SNE
+t-SNE es estocástico; dos corridas dan mapas distintos. Para comparar datos, proyectalos **juntos** en un solo embedding, o fija el seed y las condiciones.
+:::
+
+::: {.callout-warning}
+### 3. Ignorar el preprocesamiento
+Como con clustering: escalar las features, manejar missing values, one-hot categorical, etc. Un buen embedding empieza por buenos inputs.
+:::
+
+::: {.callout-warning}
+### 4. Interpretar distancias globales
+Dos veces: **t-SNE no preserva distancias globales**. Si esa información es importante, usá PCA, MDS o UMAP con parámetros cuidadosos.
+:::
+
+## Lo que te llevás
+
+- Un **embedding** es un mapa de alta a baja dimensión que preserva algo importante (varianza, vecindarios, reconstruibilidad).
+- **PCA** es lineal, rápido, interpretable. Falla en estructuras curvas.
+- **t-SNE** preserva **vecindarios locales** — excelente para descubrir clusters visualmente. No preserva distancias globales ni tamaños.
+- **Perplexity** controla cuánto contexto usa. Probá varios.
+- **UMAP** es una alternativa moderna más rápida y con mejor estructura global.
+- Usá embeddings para **entender** los datos, no como features directas para un modelo.
+
+## Para seguir
+
+- 👉 [Clustering (k-means)](clustering.qmd) — una vez que ves clusters en t-SNE, podés intentar encontrarlos formalmente.
+- 👉 [Sesgos estadísticos](../01-fundamentos/sesgos.qmd) — mirar el mapa de t-SNE también puede revelar sesgos (grupos que no esperabas).

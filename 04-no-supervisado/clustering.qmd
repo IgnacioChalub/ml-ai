@@ -1,0 +1,215 @@
+---
+title: "Clustering con k-means"
+subtitle: "Encontrando grupos en datos sin etiquetas"
+description: "Cómo k-means descubre grupos minimizando distancia al centro, cómo elegir k, y cuándo falla."
+jupyter: python3
+---
+
+[No supervisado]{.topic-pill} [Clustering]{.topic-pill}
+
+## Intuición {#sec-intuicion}
+
+::: {.intuicion-block}
+Hasta ahora trabajamos con **datos etiquetados**: cada punto venía con un $y$ (número o clase) y el modelo aprendía a predecirlo. Ahora cambiamos la pregunta: *tenés un montón de puntos sin etiquetas, ¿hay grupos naturales entre ellos?*
+
+Eso es **clustering**. El algoritmo más simple y más usado se llama **k-means**: partís el espacio en $k$ grupos, donde cada grupo tiene un **centro** (centroide) y cada punto se asigna al centro más cercano.
+:::
+
+Ejemplos reales:
+
+- **Segmentación de clientes**: agrupar usuarios con comportamiento similar para mandarles campañas distintas.
+- **Compresión de imágenes**: clustering de colores en $k$ colores representativos.
+- **Detección de anomalías**: puntos lejos de cualquier cluster son sospechosos.
+- **Pre-procesamiento**: usar el cluster como una feature adicional en un modelo supervisado.
+
+## Cómo funciona k-means
+
+El algoritmo es sorprendentemente simple. Empezás eligiendo $k$ (cantidad de clusters), y después iterás dos pasos hasta que se estabilice:
+
+### Paso 1 — Asignar cada punto al centro más cercano
+
+Dados $k$ centros $c_1, \dots, c_k$, cada punto $x_i$ se asigna al cluster cuyo centro esté más cerca:
+
+$$
+\text{cluster}(x_i) = \arg\min_j \|x_i - c_j\|^2
+$$
+
+### Paso 2 — Mover cada centro al promedio de los puntos que le tocaron
+
+Para cada cluster, calculá la media de sus puntos y mové el centro ahí:
+
+$$
+c_j = \frac{1}{|S_j|} \sum_{x_i \in S_j} x_i
+$$
+
+donde $S_j$ es el conjunto de puntos asignados al cluster $j$.
+
+### Repetir hasta que se estabilice
+
+Cuando las asignaciones no cambian (o cambian muy poco), convergió. Típicamente en pocas iteraciones (5-20).
+
+::: {.callout-tip}
+## La intuición de los dos pasos
+Es un diálogo: *"dado estos centros, ¿quién está más cerca de quién?"* (paso 1) seguido de *"dadas estas asignaciones, ¿cuál sería el mejor centro para cada grupo?"* (paso 2). Cada paso mejora un poco la métrica de calidad — y alternás hasta converger.
+:::
+
+### La función que minimiza
+
+k-means en realidad está minimizando la **suma de distancias al cuadrado** de cada punto a su centro asignado:
+
+$$
+\mathcal{L} = \sum_{j=1}^{k} \sum_{x_i \in S_j} \|x_i - c_j\|^2
+$$
+
+Esto se llama **inertia** o **within-cluster sum of squares** (WCSS). A menos inertia, clusters más compactos.
+
+El algoritmo de los dos pasos no garantiza el óptimo global (la loss **no es convexa** en los centros), pero siempre converge a un mínimo local. Por eso se corre varias veces con distintas inicializaciones y se elige la mejor (`n_init` en sklearn).
+
+## Visualización
+
+```{python}
+#| fig-cap: "k-means en acción. Los centros (X negras) y los clusters aprendidos."
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.cluster import KMeans
+from sklearn.datasets import make_blobs
+
+X, _ = make_blobs(n_samples=300, centers=4, cluster_std=0.7, random_state=0)
+
+km = KMeans(n_clusters=4, n_init=10, random_state=0).fit(X)
+
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.scatter(X[:, 0], X[:, 1], c=km.labels_, cmap="tab10", s=40, edgecolor="white", alpha=0.8)
+ax.scatter(km.cluster_centers_[:, 0], km.cluster_centers_[:, 1],
+           marker="X", s=250, c="black", label="centroides", edgecolor="white", linewidth=2)
+ax.set_xlabel("x₁"); ax.set_ylabel("x₂"); ax.legend()
+ax.set_title(f"k-means con k=4  (inertia = {km.inertia_:.1f})")
+plt.tight_layout(); plt.show()
+```
+
+## Cómo elegir $k$
+
+Esta es **la** pregunta de k-means. Algunas técnicas:
+
+### Método del codo (elbow)
+
+Corré k-means con distintos valores de $k$ y graficá la inertia. La curva baja monotonamente (más clusters = clusters más chicos = menos distancia), pero **el rate de bajada se frena** en algún punto — ese "codo" es una heurística para el $k$ correcto.
+
+```{python}
+#| fig-cap: "Método del codo. El quiebre sugiere k=4."
+inertias = []
+ks = range(1, 10)
+for k in ks:
+    km = KMeans(n_clusters=k, n_init=10, random_state=0).fit(X)
+    inertias.append(km.inertia_)
+
+fig, ax = plt.subplots(figsize=(7, 3.5))
+ax.plot(ks, inertias, "o-", lw=2, color="#2E5EAA")
+ax.axvline(4, color="#22c55e", ls="--", label="codo sugerido")
+ax.set_xlabel("k"); ax.set_ylabel("inertia"); ax.legend()
+ax.grid(alpha=0.3)
+plt.tight_layout(); plt.show()
+```
+
+### Silhouette score
+
+Para cada punto, mide:
+
+- $a$ = distancia promedio a los puntos de **su** cluster.
+- $b$ = distancia promedio a los puntos del cluster **más cercano distinto**.
+
+$$
+s = \frac{b - a}{\max(a, b)} \in [-1, 1]
+$$
+
+- Cerca de 1: punto bien asignado.
+- Cerca de 0: en la frontera entre clusters.
+- Negativo: probablemente asignado al cluster equivocado.
+
+El silhouette promedio sobre todos los puntos, para distintos $k$, te da una métrica más cuantitativa que el codo.
+
+```{python}
+from sklearn.metrics import silhouette_score
+
+for k in range(2, 8):
+    km = KMeans(n_clusters=k, n_init=10, random_state=0).fit(X)
+    s = silhouette_score(X, km.labels_)
+    print(f"k = {k}: silhouette = {s:.3f}")
+```
+
+### Conocimiento del dominio
+
+A veces el negocio te dice *"queremos 3 segmentos de clientes para campañas A, B y C"*. En ese caso $k = 3$ y listo. Métodos estadísticos son útiles pero no mandan.
+
+## Un detalle crítico: inicialización
+
+El resultado de k-means depende de **dónde arrancan los centros**. Con inicialización aleatoria mala, podés converger a un mínimo local feo.
+
+Solución estándar: **k-means++**. En lugar de iniciar al azar, elegís el primer centro aleatorio y cada siguiente centro con probabilidad proporcional a la distancia al centro más cercano — esto favorece que los centros **arranquen distribuidos**.
+
+`KMeans(init="k-means++", n_init=10)` es el default de sklearn, y debería serlo en cualquier uso práctico.
+
+## Por qué usamos distancia euclídea (y cuándo falla)
+
+k-means asume que los clusters son **esféricos y de tamaño similar**. Eso sale del uso de distancia euclídea en la loss:
+
+- **Funciona bien**: clusters globulares, tamaños parecidos, features en escalas comparables.
+- **Falla**: clusters alargados (no esféricos), densidades muy distintas, clusters no convexos.
+
+```{python}
+#| fig-cap: "k-means falla en formas no esféricas. Los dos 'arcos' son un cluster cada uno en la realidad, pero k-means los parte por la mitad."
+from sklearn.datasets import make_moons
+
+X_moons, _ = make_moons(n_samples=200, noise=0.05, random_state=0)
+km_moons = KMeans(n_clusters=2, n_init=10, random_state=0).fit(X_moons)
+
+fig, ax = plt.subplots(figsize=(7, 4))
+ax.scatter(X_moons[:, 0], X_moons[:, 1], c=km_moons.labels_, cmap="tab10", s=40, edgecolor="white")
+ax.scatter(km_moons.cluster_centers_[:, 0], km_moons.cluster_centers_[:, 1],
+           marker="X", s=250, c="black", edgecolor="white", linewidth=2)
+ax.set_title("k-means en moons — clusters escalonados, no las dos medias lunas")
+plt.tight_layout(); plt.show()
+```
+
+Para formas complicadas existen alternativas: **DBSCAN** (basado en densidad), **Spectral Clustering**, **Gaussian Mixture Models** (clusters elípticos con covarianza).
+
+## Trampas comunes
+
+::: {.callout-warning}
+### 1. No escalar las features
+k-means usa distancia euclídea — si una feature va de 0 a 1 y otra de 0 a 100.000, la segunda domina todo. **Siempre `StandardScaler` antes** (salvo que tengas una razón específica para no hacerlo).
+:::
+
+::: {.callout-warning}
+### 2. Asumir que hay clusters
+Si los datos son uniformemente distribuidos sin estructura, k-means igual te va a dar $k$ clusters — pero son artefactos, no grupos reales. Mirá el silhouette: si es cercano a 0 para todo $k$, quizá no hay estructura clara.
+:::
+
+::: {.callout-warning}
+### 3. Interpretar los clusters mal
+Los IDs de clusters (`0, 1, 2, ...`) son **arbitrarios**. Cluster 0 en una corrida puede ser cluster 2 en otra. Y el número no implica jerarquía. Etiquetar los clusters según sus características observadas.
+:::
+
+::: {.callout-warning}
+### 4. Outliers tiran los centroides
+Un par de puntos outlier pueden correr significativamente un centroide. Considerá detectar y sacar outliers antes, o usá **k-medoids** (usa puntos reales como centros, más robusto).
+:::
+
+::: {.callout-warning}
+### 5. Features categóricas
+k-means trata las features como numéricas — si tenés variables categóricas codificadas one-hot, la distancia euclídea es rara. **k-prototypes** o **k-modes** son variantes para datos mixtos.
+:::
+
+## Lo que te llevás
+
+- **k-means** alterna dos pasos: asignar puntos al centro más cercano + mover centros al promedio de sus puntos.
+- Minimiza la **suma de distancias al cuadrado** (inertia). Converge a mínimo local — corré varias inicializaciones.
+- **Elegir $k$**: método del codo + silhouette + dominio. No hay fórmula mágica.
+- **k-means++** es la inicialización estándar, mucho mejor que aleatoria.
+- **Asume clusters esféricos** de tamaño parecido — falla en formas complejas. Alternativas: DBSCAN, GMM, Spectral.
+- **Siempre escalar features** antes.
+
+## Para seguir
+
+- 👉 [Embeddings y t-SNE](embeddings.qmd) — reducción de dimensionalidad para visualizar clusters en datos de alta dimensión.
+- 👉 [Ensembles](../03-mas-modelos/ensembles.qmd) — volviendo al mundo supervisado.

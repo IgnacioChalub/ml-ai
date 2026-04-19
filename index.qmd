@@ -1,0 +1,123 @@
+---
+title: "Machine Learning"
+subtitle: "Apuntes visuales — de los fundamentos hacia modelos"
+page-layout: full
+toc: false
+---
+
+::: {.hero}
+# Machine Learning, paso a paso
+
+<p class="lead">
+Apuntes personales con énfasis en **intuición visual**, matemática bien explicada y código que se corre. Cada tema tiene sliders, gráficos interactivos e implementaciones from scratch.
+</p>
+:::
+
+## Módulos
+
+### 1 · Fundamentos {.mt-5}
+
+Las herramientas mentales que todo lo demás usa: probabilidad, distribuciones y los sesgos que te van a morder en la práctica.
+
+```{=html}
+<div class="card-grid">
+  <a class="concept-card" href="01-fundamentos/intro.html">
+    <span class="card-emoji">🎯</span>
+    <h3>Intro a ML</h3>
+    <p>¿Qué es aprender de datos? Supervisado vs no supervisado, el pipeline clásico, dónde encaja cada técnica.</p>
+  </a>
+  <a class="concept-card" href="01-fundamentos/probabilidad.html">
+    <span class="card-emoji">🎲</span>
+    <h3>Probabilidad</h3>
+    <p>Variables aleatorias, distribuciones clave, esperanza, Bayes, MLE, Naive Bayes, muestreo, tests múltiples.</p>
+  </a>
+  <a class="concept-card" href="01-fundamentos/sesgos.html">
+    <span class="card-emoji">⚖️</span>
+    <h3>Sesgos estadísticos</h3>
+    <p>Selección, supervivencia, Simpson, data leakage. Los errores silenciosos que rompen modelos en producción.</p>
+  </a>
+</div>
+```
+
+### 2 · Modelos lineales {.mt-5}
+
+Los modelos más simples — y los más enseñados por una razón: si los entendés, entendés el 70% del resto.
+
+```{=html}
+<div class="card-grid">
+  <a class="concept-card" href="02-modelos-lineales/regresion-lineal.html">
+    <span class="card-emoji">📈</span>
+    <h3>Regresión Lineal</h3>
+    <p>Ajustar una recta a datos. MSE, ecuaciones normales, geometría del problema. El "hola mundo" de ML.</p>
+  </a>
+  <a class="concept-card" href="02-modelos-lineales/gradient-descent.html">
+    <span class="card-emoji">⛰️</span>
+    <h3>Gradient Descent</h3>
+    <p>Bajar por la superficie de pérdida. Learning rate, convergencia, variantes (SGD, mini-batch, momentum).</p>
+  </a>
+  <a class="concept-card" href="02-modelos-lineales/regresion-logistica.html">
+    <span class="card-emoji">🎚️</span>
+    <h3>Regresión Logística</h3>
+    <p>De regresión a clasificación con la sigmoide. Odds, log-loss, fronteras de decisión.</p>
+  </a>
+</div>
+```
+
+### 3 · Más allá de los lineales {.mt-5}
+
+Los modelos que ganan competencias de datos tabulares. Árboles, bosques, boosting, y el marco unificador de los GLM.
+
+```{=html}
+<div class="card-grid">
+  <a class="concept-card" href="03-mas-modelos/glm-newton.html">
+    <span class="card-emoji">🧩</span>
+    <h3>GLM + Newton</h3>
+    <p>Generalized Linear Models: el marco que unifica regresión lineal, logística, Poisson y más. Método de Newton como optimizador rápido.</p>
+  </a>
+  <a class="concept-card" href="03-mas-modelos/arboles.html">
+    <span class="card-emoji">🌲</span>
+    <h3>Árboles + Random Forest</h3>
+    <p>Decisiones tipo "20 preguntas". Gini, entropía, profundidad. Random Forest como bagging de árboles que arregla el overfitting.</p>
+  </a>
+  <a class="concept-card" href="03-mas-modelos/ensembles.html">
+    <span class="card-emoji">🧠</span>
+    <h3>Ensembles</h3>
+    <p>Bagging, Boosting y Stacking. AdaBoost, Gradient Boosting, XGBoost — los algoritmos que dominan Kaggle.</p>
+  </a>
+</div>
+```
+
+### 4 · Aprendizaje no supervisado {.mt-5}
+
+Cuando no tenés etiquetas, pero querés encontrar estructura: grupos naturales y mapas visuales de alta dimensión.
+
+```{=html}
+<div class="card-grid">
+  <a class="concept-card" href="04-no-supervisado/clustering.html">
+    <span class="card-emoji">🎯</span>
+    <h3>Clustering (k-means)</h3>
+    <p>Descubrir grupos sin etiquetas. Cómo elegir k, cuándo falla, alternativas para formas no esféricas.</p>
+  </a>
+  <a class="concept-card" href="04-no-supervisado/embeddings.html">
+    <span class="card-emoji">🗺️</span>
+    <h3>Embeddings + t-SNE</h3>
+    <p>De 784D a 2D sin perder la estructura. PCA vs t-SNE vs UMAP. Cómo leer los mapas y cómo no engañarse.</p>
+  </a>
+</div>
+```
+
+## Cómo está pensada cada página {.mt-5}
+
+Cada tema sigue la misma receta, porque el orden con el que se aprende importa tanto como el contenido:
+
+1. **Intuición** — la idea en una analogía o imagen mental
+2. **Formalización** — la matemática, explicada paso a paso
+3. **Visualización interactiva** — sliders y gráficos reactivos para *sentir* cómo se comporta
+4. **Código** — implementación from scratch, después comparación con `scikit-learn`
+5. **Trampas comunes** — qué sale mal en la práctica y por qué
+6. **Ejercicios** — preguntas cortas para fijar
+
+::: {.callout-tip}
+## Sobre la interactividad
+Las páginas usan **Observable JS** para visualizaciones reactivas (se actualizan a medida que movés sliders) y **Python** ejecutado durante el render para el código real. No necesitás correr nada localmente para leer.
+:::

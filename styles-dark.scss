@@ -1,0 +1,65 @@
+/*-- scss:defaults --*/
+
+$primary: #7AA7FF;
+$body-color: #e5e7eb;
+$body-bg: #0f172a;
+$link-color: #7AA7FF;
+
+$font-family-sans-serif: "Inter", -apple-system, sans-serif;
+$font-family-monospace: "JetBrains Mono", ui-monospace, monospace;
+
+$headings-color: #f1f5f9;
+
+/*-- scss:rules --*/
+
+body {
+  font-size: 17px;
+  line-height: 1.7;
+}
+
+h1, h2, h3, h4 {
+  letter-spacing: -0.02em;
+}
+
+h1.title {
+  background: linear-gradient(135deg, #7AA7FF 0%, #C4B5FD 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.callout-note { background: rgba(30, 58, 138, 0.2); }
+.callout-tip { background: rgba(20, 83, 45, 0.2); }
+.callout-warning { background: rgba(113, 63, 18, 0.2); }
+.callout-important { background: rgba(127, 29, 29, 0.2); }
+
+div.sourceCode {
+  border: 1px solid #1e293b;
+  background: #0b1220 !important;
+}
+
+.concept-card {
+  background: #1e293b;
+  border-color: #334155;
+
+  &:hover {
+    border-color: $primary;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+
+  p { color: #94a3b8; }
+}
+
+.intuicion-block {
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.08) 0%, rgba(14, 165, 233, 0.04) 100%);
+  border-left-color: #38bdf8;
+}
+
+form.oi {
+  background: #1e293b;
+}
+
+.topic-pill {
+  background: rgba(99, 102, 241, 0.2);
+  color: #c4b5fd;
+}

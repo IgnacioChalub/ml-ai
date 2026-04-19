@@ -1,0 +1,462 @@
+---
+title: "Gradient Descent"
+subtitle: "Bajando por la superficie de pérdida"
+description: "El algoritmo que mueve casi todo ML moderno. Learning rate, convergencia, variantes (SGD, mini-batch, momentum)."
+jupyter: python3
+---
+
+[Modelos lineales]{.topic-pill} [Optimización]{.topic-pill}
+
+## Intuición {#sec-intuicion}
+
+::: {.intuicion-block}
+Estás en una montaña con los ojos vendados y querés bajar al valle. No podés ver el mapa, pero en cada punto podés sentir **la pendiente bajo tus pies**. ¿Qué hacés? Das un paso en la dirección donde más rápido baja. Y otro. Y otro.
+
+Eso es gradient descent.
+:::
+
+En ML, la "montaña" es la función de pérdida $\mathcal{L}(\theta)$ y tu "posición" son los parámetros $\theta$. Querés encontrar el $\theta^*$ que minimice $\mathcal{L}$, y lo hacés **dando pasos en la dirección opuesta al gradiente**.
+
+## Formalización {#sec-formalizacion}
+
+#### ¿Qué es el gradiente?
+
+Antes, para regresión lineal, calculamos las derivadas parciales $\partial \mathcal{L}/\partial w$ y $\partial \mathcal{L}/\partial b$ **por separado**. Con dos parámetros eso está bien. Pero en una red neuronal moderna tenés **millones** de parámetros — escribir cada parcial suelto sería un desastre.
+
+La solución es **empaquetarlas todas en un solo objeto** llamado **gradiente**.
+
+Notación: llamamos $\theta$ al vector que contiene **todos los parámetros** juntos. Por ejemplo, en regresión lineal $\theta = (w, b)$. En una red con un millón de pesos, $\theta = (\theta_1, \theta_2, \dots, \theta_{1\,000\,000})$.
+
+El **gradiente** de $\mathcal{L}$ respecto a $\theta$ — escrito $\nabla_\theta \mathcal{L}$ — es el **vector** que tiene una componente por cada parámetro, y esa componente es la derivada parcial respecto a ese parámetro:
+
+$$
+\nabla_\theta \mathcal{L} = \left( \frac{\partial \mathcal{L}}{\partial \theta_1}, \; \frac{\partial \mathcal{L}}{\partial \theta_2}, \; \dots, \; \frac{\partial \mathcal{L}}{\partial \theta_d} \right)
+$$
+
+O sea: el gradiente **no es otra cosa que "todas las derivadas parciales juntas en una lista"**. Lo que hiciste a mano en regresión lineal, es eso — pero escrito de una sola vez.
+
+::: {.callout-tip}
+## Ejemplo concreto
+Para regresión lineal con $\theta = (w, b)$:
+
+$$
+\nabla_\theta \mathcal{L} = \left( \frac{\partial \mathcal{L}}{\partial w}, \; \frac{\partial \mathcal{L}}{\partial b} \right) = \left( -\frac{2}{n}\sum_i x_i(y_i - wx_i - b), \; -\frac{2}{n}\sum_i (y_i - wx_i - b) \right)
+$$
+
+Es un vector con 2 números. Uno te dice "cuánto cambia $\mathcal{L}$ si movés $w$". El otro, lo mismo para $b$.
+:::
+
+#### Dos propiedades que lo hacen útil
+
+Que el gradiente sea "todas las parciales juntas" suena medio administrativo. La razón por la que es una idea potente son dos propiedades:
+
+1. **Dirección**: en el espacio de parámetros, el vector $\nabla_\theta \mathcal{L}$ apunta hacia donde $\mathcal{L}$ **crece más rápido**. Literalmente, de todas las direcciones posibles, la del gradiente es la de subida más empinada.
+2. **Magnitud**: el largo del vector te dice **qué tan rápido** crece $\mathcal{L}$ en esa dirección. Gradiente grande = pendiente pronunciada. Gradiente cercano a cero = estamos en una meseta (o en un mínimo).
+
+#### El algoritmo
+
+Como el gradiente apunta en la dirección de **subida** más empinada, para **minimizar** vamos en la dirección **opuesta**:
+
+$$
+\boxed{\theta_{t+1} = \theta_t - \eta \, \nabla_\theta \mathcal{L}(\theta_t)}
+$$
+
+Lectura línea por línea:
+
+- $\theta_t$ es la posición actual (los parámetros en la iteración $t$).
+- $\nabla_\theta \mathcal{L}(\theta_t)$ es el gradiente **en ese punto** — hacia dónde crece $\mathcal{L}$ más rápido ahí.
+- El signo **menos** lo invierte → hacia abajo.
+- $\eta > 0$ (eta) es el **learning rate** — el tamaño del paso. Chico = cuidadoso y lento; grande = arriesgado.
+- $\theta_{t+1}$ es la nueva posición tras dar el paso.
+
+Repetimos hasta que $\nabla_\theta \mathcal{L} \approx 0$ (pendiente plana = mínimo) o hasta un número fijo de iteraciones.
+
+### ¿Cómo entran los datos en todo esto? {#sec-datos}
+
+Pregunta que confunde al principio: *el gradiente actualiza los parámetros, pero ¿dónde aparece el dataset?*
+
+La respuesta corta: **los datos están adentro del gradiente**. Cada vez que lo calculás, estás sumando sobre todos tus puntos $(x_i, y_i)$.
+
+#### Los datos definen la "montaña"
+
+Pensá la función de pérdida como una superficie 3D (o en general $d$-dimensional). La forma de esa superficie **no existe sola** — existe porque hay datos contrastando contra cada posible modelo. Si cambiás los datos, cambia la montaña. Los datos **son** lo que le da forma al paisaje que vas a descender.
+
+#### El gradiente como "voto agregado de los puntos"
+
+Otra manera de verlo: cada punto $(x_i, y_i)$ del dataset **vota** en qué dirección moverse. Un punto que el modelo actual predice mal (residuo grande) empuja fuerte; uno bien predicho casi no empuja. El gradiente final es la **suma de todos esos votos**.
+
+En ese lenguaje, las variantes del algoritmo son simplemente *a quién le preguntás*:
+
+- **Batch GD** → le preguntás a *todos* y promediás. Voto preciso pero caro.
+- **SGD** → preguntás a *uno* al azar. Voto ruidoso, pero barato.
+- **Mini-batch** → le preguntás a un *comité* de 32–256 puntos. Balance entre precisión y costo. El estándar de deep learning.
+
+#### Ejemplo chiquito, paso a paso
+
+Imaginá 3 puntos: $(1, 3)$, $(2, 5)$, $(3, 8)$. Arrancás con $w = 0, b = 0$ y $\eta = 0.01$.
+
+**Paso 1 — los datos te dicen cuán mal estás.**
+
+Con $w=0, b=0$, el modelo predice $\hat y = 0$ para todos. Los errores son $3, 5, 8$. La loss:
+
+$$
+\mathcal{L} = \frac{3^2 + 5^2 + 8^2}{3} = \frac{98}{3} \approx 32.7
+$$
+
+**Paso 2 — los datos te dicen hacia dónde moverte.**
+
+Calculás el gradiente usando esos mismos $x_i, y_i$:
+
+$$
+\frac{\partial \mathcal{L}}{\partial w} = -\frac{2}{3}(1\cdot 3 + 2\cdot 5 + 3\cdot 8) \approx -24.7
+$$
+
+Negativo → "subí $w$". Cuanto más grande en valor absoluto, más fuerte el empujón.
+
+**Paso 3 — actualizás:**
+
+$$
+w \leftarrow 0 - 0.01 \cdot (-24.7) = 0.247
+$$
+
+**Paso 4 — repetís.** Con el nuevo $(w, b)$, recalculás la loss (más baja) y el gradiente (distinto). Y así hasta que las mejoras se vuelven despreciables.
+
+#### El matiz clave: no estás "probando" combinaciones
+
+Un error común de intuición: pensar que gradient descent **prueba** muchos $(w, b)$ para quedarse con el mejor. **No es así** — hay infinitas combinaciones, sería imposible.
+
+Lo que hace es:
+
+1. Estás parado en **un** $(w, b)$.
+2. Los datos te dicen **qué tan mal** estás y **para qué lado** ir.
+3. Das un paso **en ese lado**.
+4. Repetís.
+
+**No es "probar y comparar"; es "preguntar y moverse"**. Los datos no son un menú de opciones — son el **juez** que, en cada punto, te dice si estás frío o caliente y te señala el lado que calienta. Gradient descent es, en el fondo, un *diálogo iterativo*: el modelo propone parámetros, los datos responden con un gradiente, el modelo ajusta, los datos vuelven a responder. Hasta que nadie tiene nada nuevo para decir (gradiente ≈ 0).
+
+### Ejemplo: regresión lineal
+
+Para $\mathcal{L}(w, b) = \frac{1}{n} \sum_i (y_i - (wx_i + b))^2$:
+
+$$
+\frac{\partial \mathcal{L}}{\partial w} = -\frac{2}{n} \sum_i x_i \, (y_i - (wx_i + b))
+$$
+
+$$
+\frac{\partial \mathcal{L}}{\partial b} = -\frac{2}{n} \sum_i (y_i - (wx_i + b))
+$$
+
+En cada paso recalculás estas dos derivadas y actualizás:
+
+$$
+w \leftarrow w - \eta \, \frac{\partial \mathcal{L}}{\partial w}, \quad b \leftarrow b - \eta \, \frac{\partial \mathcal{L}}{\partial b}
+$$
+
+## Visualización interactiva {#sec-viz}
+
+Ajustá el **learning rate** y la **posición inicial** y mirá la trayectoria que toma el descenso sobre la superficie de pérdida.
+
+```{ojs}
+//| echo: false
+viewof gdInputs = Inputs.form({
+  lr: Inputs.range([0.001, 0.3], {value: 0.05, step: 0.001, label: "Learning rate (η)"}),
+  w0: Inputs.range([-3, 5], {value: -2, step: 0.1, label: "w inicial"}),
+  b0: Inputs.range([-4, 8], {value: 6, step: 0.1, label: "b inicial"}),
+  steps: Inputs.range([1, 200], {value: 50, step: 1, label: "Iteraciones"})
+})
+```
+
+```{ojs}
+//| echo: false
+gdData = {
+  const rng = d3.randomLcg(42);
+  const noise = d3.randomNormal.source(rng)(0, 1.2);
+  const trueW = 2.1, trueB = 1.5;
+  const n = 40;
+  return Array.from({length: n}, () => {
+    const x = rng() * 10 - 5;
+    const y = trueW * x + trueB + noise();
+    return {x, y};
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+trajectory = {
+  let w = gdInputs.w0;
+  let b = gdInputs.b0;
+  const path = [{w, b, loss: d3.mean(gdData, d => (d.y - (w * d.x + b)) ** 2), step: 0}];
+  const n = gdData.length;
+  for (let t = 1; t <= gdInputs.steps; t++) {
+    let dw = 0, db = 0;
+    for (const d of gdData) {
+      const err = d.y - (w * d.x + b);
+      dw += -2 * d.x * err;
+      db += -2 * err;
+    }
+    dw /= n; db /= n;
+    w -= gdInputs.lr * dw;
+    b -= gdInputs.lr * db;
+    if (!isFinite(w) || !isFinite(b) || Math.abs(w) > 1e6) break;
+    const loss = d3.mean(gdData, d => (d.y - (w * d.x + b)) ** 2);
+    path.push({w, b, loss, step: t});
+  }
+  return path;
+}
+```
+
+```{ojs}
+//| echo: false
+gdLossGrid = {
+  const wRange = d3.range(-3, 5, 0.15);
+  const bRange = d3.range(-5, 9, 0.25);
+  const grid = [];
+  for (const ww of wRange) for (const bb of bRange) {
+    grid.push({w: ww, b: bb, loss: d3.mean(gdData, d => (d.y - (ww * d.x + bb)) ** 2)});
+  }
+  return grid;
+}
+```
+
+```{ojs}
+//| echo: false
+{
+  const last = trajectory[trajectory.length - 1];
+  const diverged = !isFinite(last.loss) || last.loss > 1e4;
+  return html`
+  <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.8rem; margin: 1rem 0;">
+    <div style="padding: 0.8rem; background: #f0f9ff; border-radius: 0.5rem; text-align: center;">
+      <div style="font-size: 0.8rem; color: #6b7280;">Iteraciones</div>
+      <div style="font-size: 1.4rem; font-weight: 600;">${trajectory.length - 1}</div>
+    </div>
+    <div style="padding: 0.8rem; background: ${diverged ? '#fef2f2' : '#f0fdf4'}; border-radius: 0.5rem; text-align: center;">
+      <div style="font-size: 0.8rem; color: #6b7280;">Loss final</div>
+      <div style="font-size: 1.4rem; font-weight: 600; color: ${diverged ? '#dc2626' : '#22c55e'};">${diverged ? 'DIVERGIÓ' : last.loss.toFixed(3)}</div>
+    </div>
+    <div style="padding: 0.8rem; background: #f9fafb; border-radius: 0.5rem; text-align: center;">
+      <div style="font-size: 0.8rem; color: #6b7280;">(w, b) final</div>
+      <div style="font-size: 1.1rem; font-weight: 600;">(${last.w.toFixed(2)}, ${last.b.toFixed(2)})</div>
+    </div>
+  </div>
+  `;
+}
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: 720,
+  height: 420,
+  marginLeft: 55,
+  x: {label: "Pendiente (w) →"},
+  y: {label: "↑ Intercepto (b)"},
+  color: {type: "log", scheme: "viridis", legend: true, label: "MSE"},
+  marks: [
+    Plot.raster(gdLossGrid, {x: "w", y: "b", fill: "loss", interpolate: "nearest"}),
+    Plot.contour(gdLossGrid, {x: "w", y: "b", fill: "loss", stroke: "white", strokeOpacity: 0.3, thresholds: 10}),
+    // Trayectoria
+    Plot.line(trajectory, {x: "w", y: "b", stroke: "#ef4444", strokeWidth: 2}),
+    Plot.dot(trajectory, {x: "w", y: "b", fill: "#ef4444", r: 2.5, opacity: 0.9}),
+    // Punto inicial
+    Plot.dot([trajectory[0]], {x: "w", y: "b", fill: "#facc15", r: 8, stroke: "white", strokeWidth: 2}),
+    // Punto final
+    Plot.dot([trajectory[trajectory.length - 1]], {x: "w", y: "b", fill: "#ef4444", r: 8, stroke: "white", strokeWidth: 2})
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: 720,
+  height: 250,
+  y: {type: "log", label: "↑ Loss (log)"},
+  x: {label: "Iteración →"},
+  grid: true,
+  marks: [
+    Plot.line(trajectory, {x: "step", y: "loss", stroke: "#2E5EAA", strokeWidth: 2.5}),
+    Plot.dot(trajectory, {x: "step", y: "loss", fill: "#2E5EAA", r: 1.5})
+  ]
+})
+```
+
+### Qué probar
+
+1. Dejá **learning rate en 0.05** y observá la trayectoria suave hacia el mínimo.
+2. Subí a **0.2** — empieza a oscilar.
+3. Subilo más, hasta **0.28-0.30** — **diverge**. El paso es tan grande que supera el mínimo y termina más lejos.
+4. Bajalo a **0.005** — converge pero *lentísimo*.
+
+Este es el dilema central: **muy chico = lento, muy grande = inestable**.
+
+## Variantes {#sec-variantes}
+
+El gradient descent vainilla usa **todos los datos** en cada paso — se llama **Batch Gradient Descent**. Dos problemas: caro con datasets grandes, y converge a un mínimo local con tendencia determinista.
+
+### SGD (Stochastic Gradient Descent)
+
+En cada iteración usás **un solo punto** aleatorio para estimar el gradiente:
+
+$$
+\theta_{t+1} = \theta_t - \eta \, \nabla_\theta \ell(\theta_t; x_i, y_i)
+$$
+
+Ventajas:
+- Pasos baratos — escala a datasets enormes.
+- El ruido del gradiente ayuda a **escapar mínimos locales**.
+
+Desventajas:
+- Trayectoria ruidosa, oscila cerca del óptimo.
+- Requiere schedulear $\eta$ (bajarlo con el tiempo).
+
+### Mini-batch
+
+El sweet spot: en cada iteración usás un **batch** de $B$ ejemplos (típicamente 32, 64, 256).
+
+$$
+\theta_{t+1} = \theta_t - \eta \, \frac{1}{B} \sum_{i \in \text{batch}} \nabla_\theta \ell(\theta_t; x_i, y_i)
+$$
+
+Es lo que usa **todo** el deep learning moderno. Aprovecha vectorización en GPU y mantiene el "ruido útil" del SGD.
+
+### Momentum
+
+El problema del GD vainilla: en valles alargados zigzaguea. La solución: acumular una "velocidad" que suaviza la dirección.
+
+$$
+v_{t+1} = \beta v_t + \nabla_\theta \mathcal{L}(\theta_t)
+$$
+$$
+\theta_{t+1} = \theta_t - \eta \, v_{t+1}
+$$
+
+$\beta \approx 0.9$ típicamente. Es como si tuvieras **inercia** — los gradientes consistentes se refuerzan, los ruidosos se cancelan.
+
+### Adam (el estándar actual)
+
+Combina momentum con un learning rate **adaptativo por parámetro** (más pequeño para parámetros que ya tuvieron gradientes grandes). Es el default en casi todo deep learning.
+
+```{python}
+# Pseudo-código conceptual
+# m_t = β1 * m_{t-1} + (1 - β1) * g_t         # momentum
+# v_t = β2 * v_{t-1} + (1 - β2) * g_t²         # varianza del gradiente
+# θ_t = θ_{t-1} - η * m_t / (sqrt(v_t) + ε)
+```
+
+## Código from scratch {#sec-codigo}
+
+```{python}
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Datos sintéticos
+rng = np.random.default_rng(42)
+n = 40
+X = rng.uniform(-5, 5, n)
+true_w, true_b = 2.1, 1.5
+y = true_w * X + true_b + rng.normal(0, 1.2, n)
+
+def gradient_descent(X, y, lr=0.05, n_iter=100, init=(0, 0)):
+    w, b = init
+    history = {"w": [w], "b": [b], "loss": [np.mean((y - (w*X + b))**2)]}
+    for _ in range(n_iter):
+        err = y - (w * X + b)
+        dw = -2 * np.mean(X * err)
+        db = -2 * np.mean(err)
+        w -= lr * dw
+        b -= lr * db
+        history["w"].append(w)
+        history["b"].append(b)
+        history["loss"].append(np.mean((y - (w*X + b))**2))
+    return w, b, history
+
+w_final, b_final, hist = gradient_descent(X, y, lr=0.05, n_iter=80, init=(-2, 6))
+print(f"w = {w_final:.4f}, b = {b_final:.4f}")
+print(f"Loss final: {hist['loss'][-1]:.4f}")
+```
+
+### Comparación de learning rates
+
+```{python}
+#| fig-cap: "Mismo punto inicial, distintos learning rates. Muy chico: lento. Muy grande: oscila o diverge."
+fig, ax = plt.subplots(figsize=(8, 4.5))
+for lr, color in [(0.005, "#94a3b8"), (0.05, "#2E5EAA"), (0.22, "#f59e0b"), (0.29, "#dc2626")]:
+    _, _, h = gradient_descent(X, y, lr=lr, n_iter=80, init=(-2, 6))
+    losses = np.clip(h["loss"], 1e-3, 1e6)
+    ax.plot(losses, label=f"η = {lr}", color=color, lw=2)
+ax.set_yscale("log"); ax.set_xlabel("iteración"); ax.set_ylabel("loss (log)")
+ax.legend(); ax.grid(alpha=0.3)
+plt.tight_layout(); plt.show()
+```
+
+### SGD vs Batch
+
+```{python}
+#| fig-cap: "SGD es ruidoso pero rápido. Batch GD es suave pero usa todos los datos por paso."
+def sgd(X, y, lr=0.01, n_epochs=20, rng=None):
+    if rng is None:
+        rng = np.random.default_rng(0)
+    w, b = -2.0, 6.0
+    losses = [np.mean((y - (w*X + b))**2)]
+    n = len(X)
+    for _ in range(n_epochs):
+        idx = rng.permutation(n)
+        for i in idx:
+            err = y[i] - (w * X[i] + b)
+            w += lr * 2 * X[i] * err
+            b += lr * 2 * err
+            losses.append(np.mean((y - (w*X + b))**2))
+    return losses
+
+losses_sgd = sgd(X, y, lr=0.01, n_epochs=5)
+_, _, h_batch = gradient_descent(X, y, lr=0.05, n_iter=len(losses_sgd)-1, init=(-2, 6))
+
+fig, ax = plt.subplots(figsize=(8, 4))
+ax.plot(losses_sgd, label="SGD (1 muestra)", color="#f59e0b", lw=1.2, alpha=0.8)
+ax.plot(h_batch["loss"], label="Batch GD", color="#2E5EAA", lw=2)
+ax.set_xlabel("paso (no epoch)"); ax.set_ylabel("loss"); ax.legend(); ax.grid(alpha=0.3)
+plt.tight_layout(); plt.show()
+```
+
+## Trampas comunes {#sec-trampas}
+
+::: {.callout-warning}
+### 1. Learning rate mal elegido
+El error más común. Señales:
+- **Muy alto**: loss oscila o diverge a NaN.
+- **Muy bajo**: loss baja pero agonizando, nunca llega al óptimo en el tiempo disponible.
+
+Regla práctica: empezá con $10^{-3}$, probá múltiplos de 10, usá **LR schedulers** (reducir con el tiempo).
+:::
+
+::: {.callout-warning}
+### 2. Features en escalas distintas
+Si un feature va de 0 a 1 y otro de 0 a 10000, la superficie de pérdida es un valle **larguísimo y estrecho** — el GD rebota contra las paredes y avanza muy lento.
+
+**Solución**: normalizá features antes de entrenar (`StandardScaler`, `MinMaxScaler`).
+:::
+
+::: {.callout-warning}
+### 3. Mínimos locales y puntos silla
+En problemas no convexos (cualquier red neuronal), hay infinitos puntos donde $\nabla = 0$ que no son el mínimo global.
+
+**Mitigaciones**: inicializaciones random múltiples, momentum, SGD (el ruido ayuda), batch normalization, skip connections en redes profundas.
+:::
+
+::: {.callout-warning}
+### 4. Vanishing / exploding gradients
+En redes profundas, el gradiente puede volverse ínfimo (no aprende) o enorme (explota).
+
+**Soluciones**: inicialización apropiada (He, Xavier), normalizaciones (batch/layer norm), clipping de gradientes, arquitecturas modernas (ResNet, attention).
+:::
+
+::: {.callout-warning}
+### 5. Olvidar `.zero_grad()` en PyTorch
+Gratis: los gradientes se **acumulan** entre iteraciones. Si te olvidás de limpiarlos, cada paso suma el gradiente anterior y todo explota. Error clásico.
+:::
+
+## Para seguir
+
+- 👉 [Regresión Logística](regresion-logistica.qmd) — GD es lo que la entrena (no hay fórmula cerrada).
+- 👉 [Regresión Lineal](regresion-lineal.qmd) — la loss sobre la que trabajamos acá.
