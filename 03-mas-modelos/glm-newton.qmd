@@ -390,6 +390,112 @@ Plot.plot({
 Porque la aproximación cuadrática de Taylor **es exacta** (la función ya era cuadrática). En funciones no cuadráticas (como log-loss), la aproximación es buena cerca del punto actual pero no perfecta, y hacen falta varios pasos — aunque muchos menos que GD.
 :::
 
+### Ahora sí: función NO cuadrática
+
+La viz de arriba es buena para ver *auto-normalización* — Newton tira el mismo paso sin importar la curvatura. Pero como la función era exactamente una parábola, Newton llegaba en un paso y nunca veías su step "adaptarse".
+
+Probá esta otra: $f(x) = \cosh(a x) - 1$. No es cuadrática — tiene partes chatas y partes empinadas — así que Newton ya **no** aterriza en un solo salto y vas a ver cómo el tamaño del paso sí depende de la curvatura local.
+
+El paso de Newton aquí tiene forma explícita:
+
+$$
+\text{paso} = \frac{f'(x)}{f''(x)} = \frac{a \sinh(ax)}{a^2 \cosh(ax)} = \frac{\tanh(ax)}{a}
+$$
+
+Observá: cuando $a$ crece (curva más empinada), **el paso se achica** porque $\tanh$ se satura en 1 y el denominador $a$ sigue creciendo.
+
+```{ojs}
+//| echo: false
+viewof coshInputs = Inputs.form({
+  a:  Inputs.range([0.3, 3], {value: 1, step: 0.05, label: "Curvatura (a, aumenta empinamiento)"}),
+  x0: Inputs.range([-4, 4], {value: -3, step: 0.1, label: "Punto inicial x₀"})
+})
+```
+
+```{ojs}
+//| echo: false
+coshData = {
+  const a = coshInputs.a;
+  const x0 = coshInputs.x0;
+
+  const xs = d3.range(-5, 5.01, 0.05);
+  const curve = xs.map(x => ({x, y: Math.cosh(a * x) - 1}));
+
+  // Iterar Newton desde x0
+  const path = [x0];
+  let cur = x0;
+  for (let i = 0; i < 20; i++) {
+    const step = Math.tanh(a * cur) / a;
+    cur = cur - step;
+    path.push(cur);
+    if (Math.abs(step) < 1e-4) break;
+  }
+
+  // El primer paso (lo que el usuario más quiere ver)
+  const firstStep = Math.tanh(a * x0) / a;
+
+  return {curve, path, a, x0, firstStep, grad: a * Math.sinh(a * x0), hess: a * a * Math.cosh(a * x0)};
+}
+```
+
+```{ojs}
+//| echo: false
+html`
+<div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 0.6rem; margin: 1rem 0;">
+  <div style="padding: 0.8rem; background: #f0f9ff; border-radius: 0.5rem; text-align: center;">
+    <div style="font-size: 0.78rem; color: #6b7280;">f′(x₀) gradiente</div>
+    <div style="font-size: 1.3rem; font-weight: 600; color: #2E5EAA;">${coshData.grad.toFixed(2)}</div>
+  </div>
+  <div style="padding: 0.8rem; background: #f0fdf4; border-radius: 0.5rem; text-align: center;">
+    <div style="font-size: 0.78rem; color: #6b7280;">f′′(x₀) curvatura</div>
+    <div style="font-size: 1.3rem; font-weight: 600; color: #15803d;">${coshData.hess.toFixed(2)}</div>
+  </div>
+  <div style="padding: 0.8rem; background: #fef3c7; border-radius: 0.5rem; text-align: center;">
+    <div style="font-size: 0.78rem; color: #6b7280;">1er paso Newton</div>
+    <div style="font-size: 1.3rem; font-weight: 600; color: #b45309;">${Math.abs(coshData.firstStep).toFixed(3)}</div>
+  </div>
+  <div style="padding: 0.8rem; background: #fee2e2; border-radius: 0.5rem; text-align: center;">
+    <div style="font-size: 0.78rem; color: #6b7280;">Iter. hasta converger</div>
+    <div style="font-size: 1.3rem; font-weight: 600; color: #991b1b;">${coshData.path.length - 1}</div>
+  </div>
+</div>
+`
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: 720,
+  height: 380,
+  grid: true,
+  x: {label: "x →", domain: [-5, 5]},
+  y: {label: "↑ f(x)", domain: [0, Math.min(Math.cosh(coshData.a * 5) - 1, 30)]},
+  marks: [
+    Plot.line(coshData.curve, {x: "x", y: "y", stroke: "#94a3b8", strokeWidth: 2}),
+    // Mínimo
+    Plot.dot([{x: 0, y: 0}], {x: "x", y: "y", fill: "#22c55e", r: 6, stroke: "white", strokeWidth: 2}),
+    // Path Newton
+    Plot.line(coshData.path.map(x => ({x, y: Math.cosh(coshData.a * x) - 1})),
+             {x: "x", y: "y", stroke: "#e11d48", strokeWidth: 2}),
+    Plot.dot(coshData.path.map((x, i) => ({x, y: Math.cosh(coshData.a * x) - 1, i})),
+            {x: "x", y: "y", fill: "#e11d48", r: 4, opacity: 0.85, stroke: "white", strokeWidth: 1}),
+    // Punto inicial destacado
+    Plot.dot([{x: coshData.x0, y: Math.cosh(coshData.a * coshData.x0) - 1}],
+            {x: "x", y: "y", fill: "#e11d48", r: 8, stroke: "white", strokeWidth: 2}),
+    Plot.text([{x: coshData.x0, y: Math.cosh(coshData.a * coshData.x0) - 1}],
+             {x: "x", y: "y", text: () => "  x₀", fill: "#e11d48", textAnchor: "start", fontWeight: "bold", dy: -12})
+  ]
+})
+```
+
+**Qué probar:**
+
+- Dejá $x_0 = -3$ fijo y subí $a$ desde 0.3 hasta 3. Mirá que **el primer paso se achica** (por ejemplo, de ~2.99 a ~0.33). La curvatura crece y Newton toma pasos más prudentes.
+- Fijate que aun con pasos más chicos, **la cantidad total de iteraciones para converger puede bajar**. Newton sabe que cuando la curvatura cambia rápido, lo inteligente es no pasarse.
+- Con $a$ muy chico (como 0.3), la función es casi lineal en la región visible — el gradiente es bajo y Newton toma pasos grandes. Con $a$ alto (3), la función es muy curva y Newton camina con cuidado.
+
+Esto es la intuición completa: **paso de Newton ∝ 1 / curvatura**.
+
 ## Trade-offs: GD vs Newton
 
 | | Gradient Descent | Método de Newton |
