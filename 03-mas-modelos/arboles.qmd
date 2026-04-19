@@ -10,63 +10,141 @@ jupyter: python3
 ## Intuición {#sec-intuicion}
 
 ::: {.intuicion-block}
-Hasta ahora vimos modelos **lineales**: suman features con pesos, y listo. Funcionan cuando el mundo se separa bien con rectas — pero el mundo real casi nunca es así.
+Hasta ahora vimos modelos **lineales**: suman features con pesos y listo. Funcionan cuando el mundo se separa bien con rectas — pero el mundo real casi nunca es así.
 
-Un **árbol de decisión** tiene otra filosofía: toma decisiones como un humano razonando, **haciendo una secuencia de preguntas sí/no**. *"¿La edad es mayor a 30?"* → *"¿El ingreso es mayor a 50k?"* → *"Predicción: aprobar crédito"*. Cada pregunta parte el dataset en dos; tras muchas preguntas encadenadas llegás a una hoja con una predicción.
+Un **árbol de decisión** tiene otra filosofía: toma decisiones **como un humano que razona haciendo preguntas sí/no** hasta llegar a una respuesta. *"¿La edad es mayor a 30?"* → *"¿El ingreso es mayor a 50k?"* → *"Predicción: aprobar crédito"*. Cada pregunta parte el dataset en dos; después de varias preguntas encadenadas llegás a una **hoja** con la predicción final.
 :::
 
-Un árbol aprendido se lee **exactamente** como un diagrama de flujo. Y eso es parte de su atractivo: a diferencia de una red neuronal, **podés ver por qué toma cada decisión**.
+Un árbol aprendido se lee **exactamente** como un diagrama de flujo. A diferencia de una red neuronal, **podés ver por qué toma cada decisión**.
 
-## Cómo construye un árbol
+### El juego de "20 preguntas"
 
-El algoritmo es **recursivo** y codicioso. En cada paso:
+La analogía mental es el juego clásico: *"estoy pensando en algo, adiviná haciéndome preguntas sí/no"*. La mejor estrategia es hacer preguntas que **partan el espacio de posibilidades lo más parejo posible** — así cada pregunta elimina la máxima cantidad de incertidumbre.
 
-1. **Mirá todos los posibles cortes** en todas las features. Para una feature continua, los cortes candidatos son los valores intermedios entre puntos consecutivos; para categóricas, agrupar categorías.
-2. **Evaluá cada corte**: ¿qué tan "limpios" quedan los dos grupos resultantes?
-3. **Elegí el mejor corte** — el que maximiza la "pureza" de los hijos.
-4. **Repetí** en cada hoja nueva hasta algún criterio de parada (profundidad máxima, mínimo de ejemplos, etc.).
+Si tu primera pregunta es *"¿es rojo?"* y sólo 2% de las cosas del mundo son rojas, la mayoría de las veces te quedan 98% todavía por adivinar — pregunta mala. Si en cambio preguntás *"¿es más grande que una pelota de tenis?"* y eso divide el universo ~50/50, ganaste mucha información.
 
-::: {.callout-tip}
-## Analogía: el juego de "20 preguntas"
-En el juego clásico, querés adivinar una palabra haciendo la menor cantidad de preguntas sí/no. La mejor estrategia es hacer preguntas que **partan el espacio de posibilidades por la mitad** — así cada pregunta elimina la mayor cantidad de incertidumbre. Eso es exactamente lo que hace un árbol al elegir cada corte.
-:::
+**Eso es lo que hace un árbol**: en cada nodo, busca la pregunta que mejor separa los datos que tiene. No es magia — es el mismo truco del juego.
 
-### ¿Qué significa "limpio"?
+## Cómo se construye un árbol, paso a paso
 
-La métrica clásica para clasificación es **Gini**:
+El algoritmo es **recursivo y codicioso**. En cada nodo nuevo:
+
+1. **Revisá todos los cortes posibles**. Para una feature continua como edad, los candidatos son los valores intermedios entre puntos consecutivos ($\le 21$, $\le 23.5$, $\le 26.5$...). Para una categórica, combinaciones de categorías.
+2. **Puntuá cada corte**: ¿qué tan "limpios" quedan los dos grupos resultantes?
+3. **Elegí el mejor** y usalo.
+4. **Repetí** en los dos hijos recién creados.
+
+"Codicioso" significa: en cada paso elige lo que parece mejor *ahora*, sin mirar más allá. No siempre encuentra el mejor árbol global, pero en la práctica anda más que bien.
+
+### ¿Qué significa "limpio"? Gini explicada
+
+**Gini** es la métrica más usada. Para un nodo con varias clases:
 
 $$
 \text{Gini}(S) = 1 - \sum_k p_k^2
 $$
 
-donde $p_k$ es la proporción de la clase $k$ en el nodo $S$.
+Pensalo así: *"si sacás dos ejemplos al azar del nodo (con reemplazo), ¿qué probabilidad hay de que sean de clases distintas?"* Gini exactamente mide eso.
 
-Casos extremos para 2 clases:
+- Todos iguales → sacar dos y que sean distintos es imposible → Gini = **0** (**puro**).
+- 50/50 → chance de clases distintas = 0.5 → Gini = **0.5** (**caos total**).
 
-- Todos de la misma clase → $p_1 = 1, p_2 = 0$ → Gini = $1 - (1 + 0) = 0$ (**puro**).
-- 50/50 mezclado → $p_1 = p_2 = 0.5$ → Gini = $1 - (0.25 + 0.25) = 0.5$ (**máximo desorden**).
+Otra opción es **entropía**, $H(S) = -\sum_k p_k \log_2 p_k$. Da árboles casi iguales; Gini es un poquito más rápida de computar.
 
-Otra métrica popular es **entropía**:
+Para **regresión** no hay clases — se minimiza la **varianza del target** en cada hoja.
 
-$$
-H(S) = -\sum_k p_k \log_2 p_k
-$$
+### Interactivo: sentir qué es Gini
 
-Las dos dan árboles muy parecidos. La de regresión es diferente: se usa **varianza** del target en el nodo (los cortes minimizan la varianza de $y$ dentro de cada hoja).
+Movés la composición del nodo (proporción de clase 1) y ves cómo cambia el Gini en vivo.
+
+```{ojs}
+//| echo: false
+viewof giniInputs = Inputs.form({
+  p: Inputs.range([0, 1], {value: 0.5, step: 0.01, label: "Proporción de clase 1 (el resto es clase 0)"})
+})
+```
+
+```{ojs}
+//| echo: false
+giniStats = {
+  const p = giniInputs.p;
+  const gini = 1 - p * p - (1 - p) * (1 - p);
+  const entropy = (p > 0 && p < 1) ? -(p * Math.log2(p) + (1 - p) * Math.log2(1 - p)) : 0;
+  return {gini, entropy, p};
+}
+```
+
+```{ojs}
+//| echo: false
+html`
+<div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.8rem; margin: 1rem 0;">
+  <div style="padding: 1rem; background: #f0f9ff; border-radius: 0.5rem; text-align: center;">
+    <div style="font-size: 0.85rem; color: #6b7280;">Gini</div>
+    <div style="font-size: 1.8rem; font-weight: 600; color: #2E5EAA;">${giniStats.gini.toFixed(3)}</div>
+    <div style="font-size: 0.75rem; color: #6b7280;">(0 = puro, 0.5 = máximo)</div>
+  </div>
+  <div style="padding: 1rem; background: #fdf4ff; border-radius: 0.5rem; text-align: center;">
+    <div style="font-size: 0.85rem; color: #6b7280;">Entropía</div>
+    <div style="font-size: 1.8rem; font-weight: 600; color: #a21caf;">${giniStats.entropy.toFixed(3)}</div>
+    <div style="font-size: 0.75rem; color: #6b7280;">(0 = puro, 1 = máximo)</div>
+  </div>
+  <div style="padding: 1rem; background: #f0fdf4; border-radius: 0.5rem; text-align: center;">
+    <div style="font-size: 0.85rem; color: #6b7280;">Composición</div>
+    <div style="font-size: 1rem; font-weight: 600; color: #15803d; margin-top: 0.3rem;">
+      <span style="color: #dc2626;">${(giniStats.p * 100).toFixed(0)}% clase 1</span><br>
+      <span style="color: #2563eb;">${((1 - giniStats.p) * 100).toFixed(0)}% clase 0</span>
+    </div>
+  </div>
+</div>
+`
+```
+
+```{ojs}
+//| echo: false
+{
+  const ps = d3.range(0, 1.001, 0.01);
+  const data = ps.flatMap(p => [
+    {p, v: 1 - p * p - (1 - p) * (1 - p), metric: "Gini"},
+    {p, v: (p > 0 && p < 1) ? -(p * Math.log2(p) + (1 - p) * Math.log2(1 - p)) : 0, metric: "Entropía"}
+  ]);
+
+  return Plot.plot({
+    width: 640,
+    height: 260,
+    x: {label: "Proporción de clase 1 →", domain: [0, 1]},
+    y: {label: "↑ Impureza", domain: [0, 1.05]},
+    color: {legend: true, range: ["#2E5EAA", "#a21caf"]},
+    grid: true,
+    marks: [
+      Plot.line(data, {x: "p", y: "v", stroke: "metric", strokeWidth: 2}),
+      Plot.dot([{p: giniStats.p, v: giniStats.gini}], {x: "p", y: "v", fill: "#2E5EAA", r: 7, stroke: "white", strokeWidth: 2}),
+      Plot.dot([{p: giniStats.p, v: giniStats.entropy}], {x: "p", y: "v", fill: "#a21caf", r: 7, stroke: "white", strokeWidth: 2})
+    ]
+  });
+}
+```
+
+Observá:
+
+- En los **extremos** (0% o 100%), ambas métricas valen cero — nodo puro.
+- En el **medio** (50/50), las dos son máximas — caos total.
+- Gini y entropía tienen **forma parecida**; la elección entre ellas rara vez cambia el árbol final.
 
 ### El corte que "gana"
 
-Para un corte candidato que parte $S$ en $S_L$ y $S_R$, la **ganancia de información** es:
+Cuando partimos un nodo $S$ en dos hijos $S_L$ y $S_R$, medimos la **ganancia** como reducción ponderada de impureza:
 
 $$
-\text{Gain} = \text{Impureza}(S) - \left[ \frac{|S_L|}{|S|} \text{Impureza}(S_L) + \frac{|S_R|}{|S|} \text{Impureza}(S_R) \right]
+\text{Gain} = \text{Impureza}(S) - \left[ \frac{|S_L|}{|S|} \cdot \text{Impureza}(S_L) + \frac{|S_R|}{|S|} \cdot \text{Impureza}(S_R) \right]
 $$
 
-Se pondera por el tamaño de cada hijo. El corte que maximiza esa ganancia es el elegido.
+Los pesos aseguran que un corte que deja 99 puntos de un lado y 1 del otro **no le gane** a uno más equilibrado si la reducción de impureza es pareja.
 
-### Ejemplo numérico mini
+El árbol prueba **todos los cortes posibles** y elige el de mayor ganancia.
 
-Supongamos 10 puntos con la feature "edad" y etiqueta "compra/no compra":
+### Un ejemplo numérico: dónde cortaría
+
+Supongamos 10 puntos con "edad" y "compra/no":
 
 | Edad | Compra? |
 |:---:|:---:|
@@ -81,42 +159,187 @@ Supongamos 10 puntos con la feature "edad" y etiqueta "compra/no compra":
 | 50 | no |
 | 55 | sí |
 
-Gini del nodo raíz: 6 síes, 4 noes → $1 - (0.6^2 + 0.4^2) = 0.48$.
+**Nodo raíz**: 6 síes, 4 noes → Gini = $1 - 0.6^2 - 0.4^2 = 0.48$.
 
-Corte candidato: edad ≤ 30:
-- $S_L$ (4 puntos): 1 sí, 3 no → Gini = $1 - (0.25^2 + 0.75^2) = 0.375$
-- $S_R$ (6 puntos): 5 sí, 1 no → Gini = $1 - (0.833^2 + 0.167^2) = 0.278$
-- Gini ponderado: $0.4 \cdot 0.375 + 0.6 \cdot 0.278 = 0.317$
+### Interactivo: elegí el corte óptimo
 
-Ganancia: $0.48 - 0.317 = 0.163$ ✓
+Movés el slider y ves el Gini ponderado de cada candidato. El corte óptimo se marca automáticamente.
 
-El algoritmo prueba **todos** los cortes y se queda con el de mayor ganancia.
+```{ojs}
+//| echo: false
+viewof splitInputs = Inputs.form({
+  th: Inputs.range([21, 54], {value: 29, step: 1, label: "Threshold del corte (edad ≤)"})
+})
+```
+
+```{ojs}
+//| echo: false
+splitData = {
+  const points = [
+    {edad: 20, y: 0}, {edad: 22, y: 0}, {edad: 25, y: 1}, {edad: 28, y: 0},
+    {edad: 30, y: 1}, {edad: 35, y: 1}, {edad: 40, y: 1}, {edad: 45, y: 1},
+    {edad: 50, y: 0}, {edad: 55, y: 1}
+  ];
+  const gini = (arr) => {
+    if (arr.length === 0) return 0;
+    const p = arr.filter(d => d.y === 1).length / arr.length;
+    return 1 - p * p - (1 - p) * (1 - p);
+  };
+
+  const SL = points.filter(d => d.edad <= splitInputs.th);
+  const SR = points.filter(d => d.edad > splitInputs.th);
+  const giniParent = gini(points);
+  const giniL = gini(SL);
+  const giniR = gini(SR);
+  const weighted = (SL.length / 10) * giniL + (SR.length / 10) * giniR;
+  const gain = giniParent - weighted;
+
+  // Sweep all thresholds
+  const thresholds = d3.range(21, 55);
+  const sweep = thresholds.map(t => {
+    const L = points.filter(d => d.edad <= t);
+    const R = points.filter(d => d.edad > t);
+    const gL = gini(L), gR = gini(R);
+    const w = (L.length / 10) * gL + (R.length / 10) * gR;
+    return {t, gain: giniParent - w, weighted: w};
+  });
+  const best = sweep.reduce((a, b) => a.gain > b.gain ? a : b);
+
+  return {points, SL, SR, giniParent, giniL, giniR, weighted, gain, sweep, best};
+}
+```
+
+```{ojs}
+//| echo: false
+html`
+<div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.7rem; margin: 0.8rem 0;">
+  <div style="padding: 0.8rem; background: #dbeafe; border-radius: 0.5rem; text-align: center;">
+    <div style="font-size: 0.8rem; color: #6b7280;">Izquierda (edad ≤ ${splitInputs.th})</div>
+    <div style="font-size: 1rem; margin-top: 0.2rem;">${splitData.SL.length} puntos | Gini = <b>${splitData.giniL.toFixed(3)}</b></div>
+  </div>
+  <div style="padding: 0.8rem; background: #fecaca; border-radius: 0.5rem; text-align: center;">
+    <div style="font-size: 0.8rem; color: #6b7280;">Derecha (edad > ${splitInputs.th})</div>
+    <div style="font-size: 1rem; margin-top: 0.2rem;">${splitData.SR.length} puntos | Gini = <b>${splitData.giniR.toFixed(3)}</b></div>
+  </div>
+  <div style="padding: 0.8rem; background: ${splitInputs.th === splitData.best.t ? '#bbf7d0' : '#fef9c3'}; border-radius: 0.5rem; text-align: center;">
+    <div style="font-size: 0.8rem; color: #6b7280;">Ganancia</div>
+    <div style="font-size: 1.3rem; font-weight: 600;">${splitData.gain.toFixed(3)}</div>
+    <div style="font-size: 0.7rem; color: #6b7280;">${splitInputs.th === splitData.best.t ? '✓ óptimo' : `óptimo: edad ≤ ${splitData.best.t}`}</div>
+  </div>
+</div>
+`
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: 640,
+  height: 170,
+  x: {label: "Edad →", domain: [18, 58]},
+  y: {label: null, ticks: []},
+  color: {legend: false},
+  marks: [
+    // Banda izquierda
+    Plot.rect([{x1: 18, x2: splitInputs.th + 0.5, y1: 0, y2: 1}], {x1: "x1", x2: "x2", y1: "y1", y2: "y2", fill: "#dbeafe"}),
+    Plot.rect([{x1: splitInputs.th + 0.5, x2: 58, y1: 0, y2: 1}], {x1: "x1", x2: "x2", y1: "y1", y2: "y2", fill: "#fecaca"}),
+    // Threshold line
+    Plot.ruleX([splitInputs.th + 0.5], {stroke: "#1f2937", strokeWidth: 2, strokeDasharray: "5,3"}),
+    // Points
+    Plot.dot(splitData.points.filter(d => d.y === 1), {x: "edad", y: () => 0.65, fill: "#dc2626", r: 7, stroke: "white", strokeWidth: 1.5}),
+    Plot.dot(splitData.points.filter(d => d.y === 0), {x: "edad", y: () => 0.35, fill: "#2563eb", r: 7, stroke: "white", strokeWidth: 1.5}),
+    Plot.text([{x: 20, y: 0.9}], {x: "x", y: "y", text: () => "🔴 Compra", textAnchor: "start", fontSize: 11}),
+    Plot.text([{x: 20, y: 0.1}], {x: "x", y: "y", text: () => "🔵 No compra", textAnchor: "start", fontSize: 11})
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: 640,
+  height: 180,
+  x: {label: "Threshold del corte →"},
+  y: {label: "↑ Ganancia (Gini)"},
+  grid: true,
+  marks: [
+    Plot.line(splitData.sweep, {x: "t", y: "gain", stroke: "#2E5EAA", strokeWidth: 2}),
+    Plot.dot(splitData.sweep, {x: "t", y: "gain", fill: "#2E5EAA", r: 3}),
+    // Current
+    Plot.dot([{t: splitInputs.th, gain: splitData.gain}], {x: "t", y: "gain", fill: "#f59e0b", r: 8, stroke: "white", strokeWidth: 2}),
+    // Optimal
+    Plot.dot([splitData.best], {x: "t", y: "gain", fill: "#22c55e", r: 8, stroke: "white", strokeWidth: 2})
+  ]
+})
+```
+
+Probá mover el slider — vas a ver:
+
+- El corte más **balanceado** (cerca de edad 30-32) suele ser el mejor.
+- Cortes muy extremos (edad ≤ 21 o ≥ 54) dan ganancia 0 porque uno de los hijos es casi vacío.
+- El punto verde marca el **óptimo** — el mismo corte que elegiría el algoritmo automáticamente.
 
 ## Fronteras de decisión: no son rectas
 
-A diferencia de los modelos lineales, un árbol parte el espacio en **rectángulos alineados con los ejes** (cada corte es sobre **una** feature a la vez). La frontera resulta escalonada — puede aproximar formas complejas pero siempre con escalones.
+A diferencia de los modelos lineales (que cortan con **rectas**), un árbol parte el espacio en **rectángulos alineados con los ejes**. Cada corte es sobre **una feature a la vez** — y da una línea horizontal o vertical. Apilás muchos cortes y conseguís una frontera **escalonada** que puede aproximar formas complejas, pero siempre con escalones.
+
+### Interactivo: profundidad del árbol vs frontera
+
+Dataset clásico: dos medias lunas entrelazadas. Ajustá la profundidad máxima y mirá cómo cambia la frontera.
 
 ```{python}
-#| fig-cap: "Un árbol parte el plano en rectángulos. La frontera es escalonada."
+#| echo: false
+#| fig-cap: "Profundidad 1: una sola pregunta — frontera trivial. Profundidad crece → más escalones → más detalle (y más riesgo de overfit)."
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.datasets import make_moons
 
-X, y = make_moons(n_samples=200, noise=0.25, random_state=0)
-tree = DecisionTreeClassifier(max_depth=5, random_state=0).fit(X, y)
+X, y = make_moons(n_samples=250, noise=0.25, random_state=0)
 
+depths = [1, 2, 3, 5, 10, None]
+fig, axes = plt.subplots(2, 3, figsize=(13, 7.5))
 xx, yy = np.meshgrid(np.linspace(-2, 3, 300), np.linspace(-1.5, 2, 300))
-Z = tree.predict(np.c_[xx.ravel(), yy.ravel()]).reshape(xx.shape)
 
-fig, ax = plt.subplots(figsize=(8, 5))
-ax.contourf(xx, yy, Z, levels=[-0.5, 0.5, 1.5], colors=["#dbeafe", "#fecaca"], alpha=0.7)
-ax.scatter(X[y==0, 0], X[y==0, 1], c="#2563eb", edgecolor="white", s=40, label="clase 0")
-ax.scatter(X[y==1, 0], X[y==1, 1], c="#dc2626", edgecolor="white", s=40, label="clase 1")
-ax.set_xlabel("x₁"); ax.set_ylabel("x₂"); ax.legend()
-ax.set_title("Frontera de un árbol (max_depth=5)")
+for ax, d in zip(axes.flat, depths):
+    tree = DecisionTreeClassifier(max_depth=d, random_state=0).fit(X, y)
+    Z = tree.predict(np.c_[xx.ravel(), yy.ravel()]).reshape(xx.shape)
+    ax.contourf(xx, yy, Z, levels=[-0.5, 0.5, 1.5], colors=["#dbeafe", "#fecaca"], alpha=0.7)
+    ax.scatter(X[y==0, 0], X[y==0, 1], c="#2563eb", edgecolor="white", s=25)
+    ax.scatter(X[y==1, 0], X[y==1, 1], c="#dc2626", edgecolor="white", s=25)
+    title = f"max_depth = {'∞ (sin límite)' if d is None else d}"
+    acc = tree.score(X, y)
+    ax.set_title(f"{title}  |  train acc = {acc:.2f}")
+    ax.set_xticks([]); ax.set_yticks([])
 plt.tight_layout(); plt.show()
 ```
+
+Qué mirar:
+
+- **`max_depth=1`**: un solo corte horizontal/vertical — árbol "stump". La frontera es tan simple que casi no separa los datos.
+- **`max_depth=2-3`**: empieza a aparecer la curva escalonada siguiendo las medias lunas.
+- **`max_depth=5`**: muy buen ajuste, frontera razonable.
+- **`max_depth=10` y sin límite**: cada ejemplo está en su propia "celda"; el árbol **memorizó el ruido** (fijate las zonas chiquitas de color aisladas — son trampas para puntos nuevos).
+
+Esa última progresión es el **overfitting** en vivo: en training ganás accuracy, pero en datos nuevos perdés.
+
+### Interactivo: el árbol construido, paso a paso
+
+Podés ver el árbol real que aprende sklearn como diagrama de flujo — cada nodo muestra el corte, el Gini, y la mayoría de clase.
+
+```{python}
+#| echo: false
+#| fig-cap: "El árbol con max_depth=3 dibujado. Leelo como un flowchart: cada decisión te lleva a un hijo hasta llegar a una hoja."
+from sklearn.tree import plot_tree
+
+tree3 = DecisionTreeClassifier(max_depth=3, random_state=0).fit(X, y)
+
+fig, ax = plt.subplots(figsize=(13, 5.5))
+plot_tree(tree3, ax=ax, filled=True, rounded=True,
+          feature_names=["x₁", "x₂"], class_names=["0", "1"], fontsize=9)
+plt.tight_layout(); plt.show()
+```
+
+Cada caja es un nodo. Arriba tenés la pregunta, después el Gini del nodo, cuántos ejemplos llegan y cuántos de cada clase. El color más saturado indica nodos más puros.
 
 ## El problema del árbol solitario: overfitting
 
