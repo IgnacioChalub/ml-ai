@@ -17,6 +17,46 @@ La pregunta obvia: *¿son casos particulares de algo más grande?* La respuesta 
 
 Y mientras estamos en el tema de unificar, vamos a ver una **segunda forma** de encontrar los parámetros óptimos: el **método de Newton**. Es más rápido que gradient descent cuando se puede usar — y es lo que en el fondo hace la función `LogisticRegression` de sklearn cuando le ponés `solver="newton-cg"`.
 
+### En una línea: ¿qué es un GLM?
+
+Una frase que resume todo: **un GLM es una regresión lineal + una función "post" que transforma la salida**.
+
+En fórmula:
+
+$$
+\underbrace{z = w^\top x + b}_{\text{lineal}} \quad \xrightarrow{g^{-1}} \quad \underbrace{\mu}_{\text{predicción (media del target)}}, \quad y \sim \text{Familia}(\mu)
+$$
+
+Eso es todo: calculás una combinación lineal de las features, la pasás por una función no-lineal al final, y el resultado es tu predicción.
+
+Ejemplos concretos que ya viste:
+
+| Modelo | Parte lineal | Función post | Loss (sale sola de MLE) |
+|---|---|---|---|
+| **Regresión lineal** | $w^\top x + b$ | identidad (no hace nada) | MSE |
+| **Regresión logística** | $w^\top x + b$ | sigmoide | log-loss |
+| **Regresión de Poisson** | $w^\top x + b$ | exponencial | Poisson deviance |
+
+Regresión lineal es el caso "trivial" donde la función post es la identidad — literalmente "no hace nada, pasá el $z$ como está". Los otros GLM agregan una no-linealidad **sólo al final**.
+
+::: {.callout-tip}
+## El matiz que hace a GLM especial
+Si fuera solo "regresión lineal + cualquier no-linealidad + cualquier loss", no sería interesante — podrías mezclar cosas arbitrariamente.
+
+Lo que GLM agrega es: **la función post no es arbitraria** — está determinada por la **distribución del target**. Y la loss **sale automáticamente** aplicando MLE a esa distribución. Eligiendo la familia (Bernoulli, Poisson, Normal…), la función post y la loss quedan **fijadas juntas**:
+
+- Target binario → Bernoulli → post = sigmoide → loss = log-loss.
+- Target conteo → Poisson → post = exponencial → loss = Poisson deviance.
+- Target continuo → Normal → post = identidad → loss = MSE.
+
+No elegís cada pieza por separado. Elegís qué tipo de dato es tu $y$ y **todo lo demás cae en su lugar**.
+:::
+
+::: {.callout-note}
+## Conexión con redes neuronales
+La última capa de una red de clasificación binaria tiene exactamente la estructura **lineal + sigmoide** — es literalmente una regresión logística. Una regresión logística es una red neuronal de una sola capa. GLM es el marco estadístico que justifica por qué esa estructura "lineal + función post elegida según el target" es la forma correcta de terminar un modelo.
+:::
+
 ## La receta GLM
 
 Un GLM tiene **tres ingredientes**. Los vas a reconocer de inmediato.
