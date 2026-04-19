@@ -27,29 +27,119 @@ Si tu primera pregunta es *"¿es rojo?"* y sólo 2% de las cosas del mundo son r
 
 ## Cómo se construye un árbol, paso a paso
 
-El algoritmo es **recursivo y codicioso**. En cada nodo nuevo:
+Olvidate por un momento del algoritmo formal. Imaginate que lo estás armando **vos a mano**.
 
-1. **Revisá todos los cortes posibles**. Para una feature continua como edad, los candidatos son los valores intermedios entre puntos consecutivos ($\le 21$, $\le 23.5$, $\le 26.5$...). Para una categórica, combinaciones de categorías.
-2. **Puntuá cada corte**: ¿qué tan "limpios" quedan los dos grupos resultantes?
-3. **Elegí el mejor** y usalo.
-4. **Repetí** en los dos hijos recién creados.
+### El escenario
 
-"Codicioso" significa: en cada paso elige lo que parece mejor *ahora*, sin mirar más allá. No siempre encuentra el mejor árbol global, pero en la práctica anda más que bien.
+Tenés 10 personas mezcladas y una sola feature: edad.
 
-### ¿Qué significa "limpio"? Gini explicada
+```
+20🔵 22🔵 25🔴 28🔵 30🔴 35🔴 40🔴 45🔴 50🔵 55🔴
+```
 
-**Gini** es la métrica más usada. Para un nodo con varias clases:
+🔴 = compra, 🔵 = no compra.
+
+Tu misión: hacer **una pregunta sí/no** sobre la edad que separe lo mejor posible a los 🔴 de los 🔵.
+
+### Paso 1 — Probás todas las preguntas posibles
+
+Las opciones son los **puntos medios** entre edades consecutivas:
+
+> *"¿edad ≤ 21?"*, *"¿edad ≤ 23.5?"*, *"¿edad ≤ 26.5?"*, …, *"¿edad ≤ 52.5?"*
+
+Para cada una imaginás cómo queda la lista partida en dos.
+
+### Paso 2 — Le ponés nota a cada pregunta con Gini
+
+Gini es tu **termómetro de mezcla**: te dice qué tan desordenado está un grupo.
+
+- Grupo puro (todos 🔴 o todos 🔵) → Gini = **0**.
+- Grupo mitad y mitad → Gini = **0.5** (caos máximo).
+
+Para cada pregunta candidata:
+
+1. Partís la lista en izquierda y derecha.
+2. Calculás Gini de la izquierda **y** Gini de la derecha.
+3. Los **promediás ponderando por tamaño** → ese es el puntaje de la pregunta.
+
+**Menor puntaje = mejor pregunta**. Tiene sentido: menos mezcla en los hijos = más información aprendida.
+
+::: {.callout-note}
+## La fórmula detrás
 
 $$
 \text{Gini}(S) = 1 - \sum_k p_k^2
 $$
 
-Pensalo así: *"si sacás dos ejemplos al azar del nodo (con reemplazo), ¿qué probabilidad hay de que sean de clases distintas?"* Gini exactamente mide eso.
+Otra lectura: *"si sacás dos ejemplos al azar del grupo, ¿qué probabilidad hay de que sean de clases distintas?"* — Gini mide exactamente eso. Todos iguales → sacar dos distintos es imposible → Gini = 0. 50/50 → probabilidad de distintos = 0.5 → Gini = 0.5.
 
-- Todos iguales → sacar dos y que sean distintos es imposible → Gini = **0** (**puro**).
-- 50/50 → chance de clases distintas = 0.5 → Gini = **0.5** (**caos total**).
+(Alternativa popular: **entropía**. Da árboles casi iguales; Gini es un poquito más rápida de calcular.)
+:::
 
-Otra opción es **entropía**, $H(S) = -\sum_k p_k \log_2 p_k$. Da árboles casi iguales; Gini es un poquito más rápida de computar.
+### Paso 3 — Te quedás con la mejor y partís
+
+Supongamos que la ganadora es *"¿edad ≤ 32?"*. Partís la lista:
+
+```
+Izquierda (edad ≤ 32):     Derecha (edad > 32):
+20🔵 22🔵 25🔴 28🔵 30🔴    35🔴 40🔴 45🔴 50🔵 55🔴
+```
+
+Esa es la **primera pregunta del árbol**. Ya está puesta; no se toca más.
+
+### Paso 4 — Repetís TODO en cada hijo
+
+Acá está la parte clave. **Cada hijo es un problema nuevo, más chico**, con los mismos pasos:
+
+**En la izquierda** (5 personas: 20🔵, 22🔵, 25🔴, 28🔵, 30🔴):
+
+1. Probás todas las preguntas posibles *dentro de esos 5*.
+2. Le ponés nota con Gini a cada una.
+3. Te quedás con la mejor.
+4. Partís.
+
+**En la derecha**, lo mismo, por separado. No te interesa qué pasó en la izquierda.
+
+Cada hijo da dos nietos, cada nieto da dos bisnietos, y así.
+
+### Paso 5 — Parás cuando tiene sentido parar
+
+Tres razones para no seguir partiendo un nodo:
+
+- **Está puro** — todos son de la misma clase. No hay nada más que aprender. Ese nodo se vuelve una **hoja** y su predicción es esa clase.
+- **Ya no mejora** — probaste todas las preguntas y ninguna baja el Gini.
+- **Llegaste al límite** que vos pusiste (`max_depth = 3`, por ejemplo).
+
+### El resultado: un diagrama de flujo
+
+El árbol termina siendo exactamente eso — la **cadena de preguntas aprendidas**:
+
+```
+              ¿edad ≤ 32?
+               /        \
+              sí          no
+              /            \
+      ¿edad ≤ 24?        ¿edad ≤ 48?
+       /      \            /      \
+    [🔵]  ¿edad ≤ 29?  [🔴]  ¿edad ≤ 52?
+              /   \               /     \
+           [🔵] [🔴]           [🔵]   [🔴]
+```
+
+Cada nodo interno es una pregunta aprendida. Cada hoja es la predicción final para quienes lleguen hasta ahí.
+
+::: {.callout-tip}
+## Analogía del detective
+Un detective separa sospechosos en dos grupos haciendo **una sola pregunta a la vez**. Busca la pregunta que deje cada grupo lo más uniforme posible — todos culpables de un lado, todos inocentes del otro. Después vuelve a hacer lo mismo con cada sub-grupo. Cada pregunta es un corte; cada sub-grupo es un hijo.
+
+**Gini es la "puntuación de mezcla"** que usa el detective para decidir cuál pregunta ordena mejor.
+:::
+
+### Lo esencial, en una frase
+
+*Probar preguntas → puntuar con Gini → quedarse con la mejor → bajar un nivel → repetir.* Todo el resto del algoritmo es refinamientos de esa idea.
+
+Un detalle importante para después: el algoritmo es **codicioso**. En cada nodo elige lo que parece mejor *ahora*, sin evaluar consecuencias a futuro. No garantiza el mejor árbol global posible (eso sería NP-hard), pero en la práctica obtiene árboles muy buenos en tiempo razonable.
 
 Para **regresión** no hay clases — se minimiza la **varianza del target** en cada hoja.
 
