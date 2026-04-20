@@ -22,13 +22,63 @@ Ejemplos reales:
 - **Detección de anomalías**: puntos lejos de cualquier cluster son sospechosos.
 - **Pre-procesamiento**: usar el cluster como una feature adicional en un modelo supervisado.
 
+## Primero: ¿qué es la distancia euclídea? {#sec-distancia}
+
+Antes de meter la mano al algoritmo, el concepto que lo mantiene todo en pie: **la distancia entre dos puntos**.
+
+### La distancia "como vuela el pájaro"
+
+En el plano, la distancia **euclídea** entre dos puntos $a = (a_1, a_2)$ y $b = (b_1, b_2)$ es:
+
+$$
+\text{dist}(a, b) = \sqrt{(a_1 - b_1)^2 + (a_2 - b_2)^2}
+$$
+
+Esto es literalmente el **teorema de Pitágoras**: si dibujás un triángulo rectángulo con cateto horizontal $(a_1 - b_1)$ y cateto vertical $(a_2 - b_2)$, la hipotenusa es la distancia entre los puntos. Es la "línea recta" de a hasta b.
+
+En más dimensiones (datos con muchas features), la fórmula se generaliza:
+
+$$
+\text{dist}(a, b) = \sqrt{\sum_{j=1}^{d} (a_j - b_j)^2}
+$$
+
+Si $a$ y $b$ son puntos en un espacio de 784 dimensiones (como una imagen de MNIST), la distancia sigue siendo **una sola hipotenusa** que "atraviesa" todas las dimensiones.
+
+### ¿Por qué k-means la usa? (Intuitivamente)
+
+Tres razones, y son las que la convierten en la elección obvia:
+
+**1. Cerca en el espacio = parecido en las features**.
+Si dos puntos están cerca en el plano, tienen valores parecidos en sus features. Si un cliente tiene (edad=30, ingreso=50k) y otro (edad=31, ingreso=51k), están *cerca* en el plano edad×ingreso — y probablemente comparten comportamiento. Distancia chica → similitud alta. Es la traducción más natural de "similar" a un número.
+
+**2. Es simétrica y simple**.
+$\text{dist}(a,b) = \text{dist}(b,a)$. No hay "dirección" privilegiada. Y el cálculo es barato: una resta, un cuadrado, una suma, una raíz. Hacer esto millones de veces por iteración de k-means es viable.
+
+**3. Se conecta elegantemente con "promedio"**.
+El paso de mover el centro al **promedio de sus puntos** es, matemáticamente, **exactamente el punto que minimiza la suma de distancias euclídeas al cuadrado** a esos puntos. No es una casualidad: el algoritmo entero está diseñado alrededor de esta compatibilidad. Si usaras otra distancia (como Manhattan), deberías usar **mediana** en vez de promedio — y se llama **k-medians**.
+
+::: {.callout-tip}
+## El truco del cuadrado
+En k-means casi siempre se usa **distancia euclídea al cuadrado** ($\|a-b\|^2$), no la distancia "real". ¿Por qué? Son intercambiables para comparar cercanía (sacar raíz no cambia el orden), pero **evitar la raíz es más rápido** — y la minimización del cuadrado se resuelve con promedios, como dijimos. Dos beneficios, cero costo.
+:::
+
+::: {.callout-warning}
+## Cuando euclídea falla
+Esta distancia asume que **todas las dimensiones pesan igual** y que "cerca geométricamente" equivale a "parecido". Ambas cosas se rompen:
+
+- Si una feature va de 0-1 y otra de 0-100000 → la grande domina. Por eso hay que **normalizar**.
+- Si los datos están en una forma curva (como dos medias lunas), puntos cerca geométricamente pueden pertenecer a grupos distintos.
+
+Ya vas a ver ejemplos de ambos en esta página.
+:::
+
 ## Cómo funciona k-means
 
 El algoritmo es sorprendentemente simple. Empezás eligiendo $k$ (cantidad de clusters), y después iterás dos pasos hasta que se estabilice:
 
 ### Paso 1 — Asignar cada punto al centro más cercano
 
-Dados $k$ centros $c_1, \dots, c_k$, cada punto $x_i$ se asigna al cluster cuyo centro esté más cerca:
+Dados $k$ centros $c_1, \dots, c_k$, cada punto $x_i$ se asigna al cluster cuyo centro esté **más cerca** (usando la distancia euclídea que acabamos de ver):
 
 $$
 \text{cluster}(x_i) = \arg\min_j \|x_i - c_j\|^2
@@ -65,10 +115,165 @@ Esto se llama **inertia** o **within-cluster sum of squares** (WCSS). A menos in
 
 El algoritmo de los dos pasos no garantiza el óptimo global (la loss **no es convexa** en los centros), pero siempre converge a un mínimo local. Por eso se corre varias veces con distintas inicializaciones y se elige la mejor (`n_init` en sklearn).
 
-## Visualización
+## Visualización interactiva {#sec-viz}
+
+Movete la iteración con el slider y mirá cómo los centroides se acomodan. Podés cambiar $k$, resetear con otra inicialización, y ver las **regiones de Voronoi** (el territorio que le toca a cada centroide según distancia euclídea).
+
+```{ojs}
+//| echo: false
+viewof kmInputs = Inputs.form({
+  k:    Inputs.range([2, 6], {value: 3, step: 1, label: "Cantidad de clusters (k)"}),
+  iter: Inputs.range([0, 15], {value: 0, step: 1, label: "Iteración"}),
+  seed: Inputs.range([1, 20], {value: 3, step: 1, label: "Semilla (reiniciar centroides)"})
+})
+```
+
+```{ojs}
+//| echo: false
+kmPoints = {
+  const rng = d3.randomLcg(42);
+  const noise = d3.randomNormal.source(rng)(0, 0.55);
+  // Cuatro blobs reales
+  const centers = [[-2.3, 1.6], [2.2, 1.8], [-2.0, -1.7], [2.3, -1.5]];
+  const pts = [];
+  centers.forEach(c => {
+    for (let i = 0; i < 60; i++) {
+      pts.push({x: c[0] + noise(), y: c[1] + noise()});
+    }
+  });
+  return pts;
+}
+```
+
+```{ojs}
+//| echo: false
+kmPalette = ["#3b82f6", "#ef4444", "#22c55e", "#a855f7", "#f59e0b", "#0ea5e9"]
+```
+
+```{ojs}
+//| echo: false
+kmInitialCentroids = {
+  const rng = d3.randomLcg(kmInputs.seed * 1000);
+  return Array.from({length: kmInputs.k}, () => ({
+    x: (rng() - 0.5) * 7,
+    y: (rng() - 0.5) * 6
+  }));
+}
+```
+
+```{ojs}
+//| echo: false
+kmResult = {
+  let centroids = kmInitialCentroids.map(c => ({...c}));
+  const assign = (cents) => kmPoints.map(p => {
+    let best = 0, bestD = Infinity;
+    cents.forEach((c, i) => {
+      const d = (p.x - c.x) ** 2 + (p.y - c.y) ** 2;
+      if (d < bestD) { bestD = d; best = i; }
+    });
+    return best;
+  });
+  const history = [{centroids: centroids.map(c => ({...c})), labels: assign(centroids)}];
+  for (let it = 0; it < 15; it++) {
+    const labels = history[history.length - 1].labels;
+    const newCentroids = centroids.map((c, i) => {
+      const cluster = kmPoints.filter((_, j) => labels[j] === i);
+      if (cluster.length === 0) return {...c};
+      return {x: d3.mean(cluster, p => p.x), y: d3.mean(cluster, p => p.y)};
+    });
+    centroids = newCentroids;
+    history.push({centroids: centroids.map(c => ({...c})), labels: assign(centroids)});
+  }
+  // Métricas
+  const current = history[kmInputs.iter];
+  const inertia = kmPoints.reduce((sum, p, j) => {
+    const c = current.centroids[current.labels[j]];
+    return sum + (p.x - c.x) ** 2 + (p.y - c.y) ** 2;
+  }, 0);
+  return {history, current, inertia};
+}
+```
+
+```{ojs}
+//| echo: false
+kmGrid = {
+  const xs = d3.range(-5, 5.01, 0.08);
+  const ys = d3.range(-4, 4.01, 0.08);
+  const grid = [];
+  for (const x of xs) for (const y of ys) {
+    let best = 0, bestD = Infinity;
+    kmResult.current.centroids.forEach((c, i) => {
+      const d = (x - c.x) ** 2 + (y - c.y) ** 2;
+      if (d < bestD) { bestD = d; best = i; }
+    });
+    grid.push({x, y, cluster: best});
+  }
+  return grid;
+}
+```
+
+```{ojs}
+//| echo: false
+html`
+<div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.8rem; margin: 1rem 0;">
+  <div style="padding: 0.9rem; background: #f0f9ff; border-radius: 0.5rem; text-align: center;">
+    <div style="font-size: 0.85rem; color: #6b7280;">Iteración</div>
+    <div style="font-size: 1.7rem; font-weight: 600; color: #2E5EAA;">${kmInputs.iter} / 15</div>
+  </div>
+  <div style="padding: 0.9rem; background: #f0fdf4; border-radius: 0.5rem; text-align: center;">
+    <div style="font-size: 0.85rem; color: #6b7280;">Inertia (suma distancias²)</div>
+    <div style="font-size: 1.7rem; font-weight: 600; color: #15803d;">${kmResult.inertia.toFixed(1)}</div>
+  </div>
+  <div style="padding: 0.9rem; background: #fef3c7; border-radius: 0.5rem; text-align: center;">
+    <div style="font-size: 0.85rem; color: #6b7280;">Clusters</div>
+    <div style="font-size: 1.7rem; font-weight: 600; color: #b45309;">${kmInputs.k}</div>
+  </div>
+</div>
+`
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: 720,
+  height: 480,
+  marginLeft: 40,
+  x: {label: "x₁ →", domain: [-5, 5]},
+  y: {label: "↑ x₂", domain: [-4, 4]},
+  color: {type: "categorical", range: kmPalette, legend: false},
+  marks: [
+    // Regiones de Voronoi (fondo coloreado)
+    Plot.raster(kmGrid, {x: "x", y: "y", fill: "cluster", interpolate: "nearest", opacity: 0.45}),
+    // Puntos (todos blancos, como en la imagen)
+    Plot.dot(kmPoints, {x: "x", y: "y", fill: "white", stroke: "#334155", strokeWidth: 1, r: 3.5}),
+    // Centroides (grandes, del color del cluster)
+    Plot.dot(kmResult.current.centroids.map((c, i) => ({...c, cluster: i})),
+             {x: "x", y: "y", fill: "cluster", r: 11, stroke: "white", strokeWidth: 2.5})
+  ]
+})
+```
+
+### Qué probar
+
+1. **Dejá `k = 3` y movés la iteración 0 → 15**. Vas a ver los 3 centroides (empezados aleatoriamente) caminar hasta los centros naturales. Observá cómo las fronteras de Voronoi se van acomodando.
+
+2. **Cambiá la semilla** con `k = 3`. A veces k-means converge al mismo óptimo, a veces cae en un mínimo local distinto — por eso en la práctica corrés el algoritmo varias veces (`n_init`).
+
+3. **Probá `k = 4`**. Como los datos tienen realmente 4 blobs, k-means descubre los 4 con precisión.
+
+4. **Probá `k = 2`**. El algoritmo "fuerza" 2 clusters, juntando blobs que en realidad son distintos — síntoma de **haber elegido k mal**.
+
+5. **Probá `k = 6` con 4 blobs reales**. Va a partir algunos blobs en sub-regiones arbitrarias. Otro síntoma de k mal elegido.
+
+::: {.callout-note}
+## Regiones de Voronoi — lo que ves en el fondo coloreado
+Cada color en el fondo marca **el territorio de un centroide**: todos los puntos del plano más cercanos a ese centroide que a cualquier otro. Las fronteras entre regiones son equidistantes a los dos centroides vecinos. Es literalmente la traducción visual de *"cada punto se asigna al centro más cercano"*.
+:::
+
+## Visualización estática
 
 ```{python}
-#| fig-cap: "k-means en acción. Los centros (X negras) y los clusters aprendidos."
+#| fig-cap: "k-means final (usando sklearn). Los centros (X negras) y los clusters aprendidos."
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
