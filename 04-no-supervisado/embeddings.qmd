@@ -30,7 +30,170 @@ Qué significa "preservar algo importante" depende de la técnica:
 - t-SNE preserva **vecindarios** (quién está cerca de quién).
 - Autoencoders preservan **información reconstructible** (se puede volver al original con poca pérdida).
 
-"Embedding" también tiene otro uso famoso: los **word embeddings** (Word2Vec, GloVe, BERT) — representaciones densas de palabras en $\mathbb{R}^{300}$ o similar. Misma idea conceptual.
+## Embeddings como identidad semántica {#sec-identidad}
+
+Antes de seguir con técnicas, el concepto más importante: **un embedding representa a cada "cosa" como un vector en un espacio donde las distancias/direcciones tienen significado**.
+
+### Analogía: personalidad como vector
+
+Imaginá que querés representar la personalidad de alguien con dos números: *extraversión* e *introversión*, cada uno en escala de -1 a 1. Cada persona se vuelve un vector:
+
+- **Jay** = $(-0.4, 0.8)$ → introvertido, muy extrovertido... eh, contradice. Pensalo como "0.8 en trait #1, -0.4 en trait #2". No importa el nombre exacto, importa el **lugar** que ocupa en el espacio.
+- **Persona #1** = $(-0.3, 0.2)$ → cerca de Jay en dirección similar.
+- **Persona #2** = $(-0.5, -0.4)$ → **apunta al lado opuesto**.
+
+Si dibujamos los tres vectores desde el origen, Jay y Persona #1 apuntan a direcciones parecidas; Persona #2 apunta a otro lado. **Personas similares → vectores que apuntan en la misma dirección.**
+
+Lo poderoso: con solo **más dimensiones** (apertura, amabilidad, neuroticismo, …), podés representar cualquier persona con precisión arbitraria. Un vector de 300 números puede capturar muchísima información semántica.
+
+### Word embeddings: la misma idea aplicada a palabras
+
+El ejemplo que revolucionó NLP: **Word2Vec / GloVe / BERT** aprenden a representar **cada palabra como un vector** en $\mathbb{R}^{300}$ (aprox.), tal que palabras **con significado parecido** terminan en **direcciones parecidas**.
+
+Lo mágico: estos embeddings aprenden **relaciones** que nadie les enseñó explícitamente. Ejemplos clásicos:
+
+$$
+\vec{\text{rey}} - \vec{\text{hombre}} + \vec{\text{mujer}} \approx \vec{\text{reina}}
+$$
+
+$$
+\vec{\text{París}} - \vec{\text{Francia}} + \vec{\text{Italia}} \approx \vec{\text{Roma}}
+$$
+
+La dirección "masculino → femenino" o "país → capital" **existe como un vector concreto** en el espacio. Pura geometría.
+
+Esta idea se generaliza a cualquier cosa:
+
+- **Imágenes**: CLIP, vision transformers — cada imagen es un vector en $\mathbb{R}^{512}$.
+- **Usuarios / productos**: sistemas de recomendación, cada usuario y cada producto como vectores; si apuntan en direcciones parecidas, al usuario le gustará ese producto.
+- **Documentos**: sentence transformers — búsqueda semántica.
+- **Nodos de un grafo**: node2vec, GraphSAGE.
+
+Todo el mundo es un vector en algún espacio aprendido.
+
+### Cómo medimos "similar": cosine similarity {#sec-cosine}
+
+Tenemos dos vectores. ¿Cómo decidimos si apuntan en direcciones parecidas?
+
+La respuesta: **cosine similarity** — el coseno del ángulo entre ellos.
+
+$$
+\cos(\theta) = \frac{\vec{a} \cdot \vec{b}}{\|\vec{a}\| \|\vec{b}\|} = \frac{\sum_i a_i b_i}{\sqrt{\sum_i a_i^2}\sqrt{\sum_i b_i^2}}
+$$
+
+Valores y su interpretación:
+
+| $\cos(\theta)$ | Ángulo | Significa |
+|:---:|:---:|---|
+| **1** | 0° | Misma dirección — **idénticos semánticamente** |
+| **0.87** | ~30° | Dirección muy parecida — **similares** |
+| **0** | 90° | Perpendiculares — **sin relación** |
+| **-0.2** | ~100° | Ángulo obtuso — **un poco opuestos** |
+| **-1** | 180° | Direcciones opuestas — **antónimos** |
+
+#### Por qué coseno y NO distancia euclídea (en este caso)
+
+Aquí se rompe la regla de [clustering](clustering.qmd#sec-distancia). En el mundo de embeddings, la **magnitud** del vector suele reflejar **frecuencia** o **confianza**, no identidad. Lo que define qué es algo es **hacia dónde apunta**.
+
+Ejemplo: si las palabras *"feliz"* y *"contento"* tienen embeddings casi iguales en dirección pero uno es más "largo" porque aparece más en el corpus, siguen siendo sinónimos. La **distancia euclídea** los vería distintos (uno está más lejos del origen); la **cosine similarity** los ve iguales (apuntan a lo mismo).
+
+Por eso en NLP, recuperación de documentos, y casi todo trabajo con embeddings modernos, **cosine similarity es el estándar**.
+
+### Interactivo: vectores y cosine similarity
+
+Tenemos a **Jay** fijo, y dos personas que podés mover. Observá cómo la similaridad con Jay depende sólo de la **dirección**, no del tamaño.
+
+```{ojs}
+//| echo: false
+viewof cosInputs = Inputs.form({
+  p1x: Inputs.range([-1, 1], {value: -0.3, step: 0.05, label: "Persona #1 — componente x"}),
+  p1y: Inputs.range([-1, 1], {value: 0.5, step: 0.05, label: "Persona #1 — componente y"}),
+  p2x: Inputs.range([-1, 1], {value: -0.5, step: 0.05, label: "Persona #2 — componente x"}),
+  p2y: Inputs.range([-1, 1], {value: -0.4, step: 0.05, label: "Persona #2 — componente y"})
+})
+```
+
+```{ojs}
+//| echo: false
+cosData = {
+  const jay = {x: -0.4, y: 0.8, name: "Jay", color: "#3b82f6"};
+  const p1 = {x: cosInputs.p1x, y: cosInputs.p1y, name: "Persona #1", color: "#22c55e"};
+  const p2 = {x: cosInputs.p2x, y: cosInputs.p2y, name: "Persona #2", color: "#f97316"};
+
+  const cos = (a, b) => {
+    const dot = a.x * b.x + a.y * b.y;
+    const na = Math.hypot(a.x, a.y);
+    const nb = Math.hypot(b.x, b.y);
+    if (na < 1e-9 || nb < 1e-9) return 0;
+    return dot / (na * nb);
+  };
+
+  return {jay, p1, p2, sim1: cos(jay, p1), sim2: cos(jay, p2)};
+}
+```
+
+```{ojs}
+//| echo: false
+html`
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin: 1rem 0;">
+  <div style="padding: 1rem; background: #f0fdf4; border-radius: 0.5rem; text-align: center;">
+    <div style="font-size: 0.85rem; color: #6b7280;">cosine( Jay, Persona #1 )</div>
+    <div style="font-size: 1.8rem; font-weight: 600; color: ${cosData.sim1 > 0.5 ? '#15803d' : cosData.sim1 < -0.3 ? '#991b1b' : '#b45309'};">${cosData.sim1.toFixed(2)}</div>
+    <div style="font-size: 0.8rem; color: #6b7280;">${cosData.sim1 > 0.7 ? '✓ muy similares' : cosData.sim1 > 0.3 ? 'bastante similares' : cosData.sim1 > -0.3 ? 'sin relación' : 'opuestos'}</div>
+  </div>
+  <div style="padding: 1rem; background: #fff7ed; border-radius: 0.5rem; text-align: center;">
+    <div style="font-size: 0.85rem; color: #6b7280;">cosine( Jay, Persona #2 )</div>
+    <div style="font-size: 1.8rem; font-weight: 600; color: ${cosData.sim2 > 0.5 ? '#15803d' : cosData.sim2 < -0.3 ? '#991b1b' : '#b45309'};">${cosData.sim2.toFixed(2)}</div>
+    <div style="font-size: 0.8rem; color: #6b7280;">${cosData.sim2 > 0.7 ? '✓ muy similares' : cosData.sim2 > 0.3 ? 'bastante similares' : cosData.sim2 > -0.3 ? 'sin relación' : 'opuestos'}</div>
+  </div>
+</div>
+`
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: 520,
+  height: 520,
+  x: {domain: [-1.1, 1.1], label: "Trait #1 →", grid: true},
+  y: {domain: [-1.1, 1.1], label: "↑ Trait #2", grid: true},
+  marks: [
+    Plot.ruleX([0], {stroke: "#cbd5e1"}),
+    Plot.ruleY([0], {stroke: "#cbd5e1"}),
+    // Jay
+    Plot.arrow([{x1: 0, y1: 0, x2: cosData.jay.x, y2: cosData.jay.y}],
+              {x1: "x1", y1: "y1", x2: "x2", y2: "y2", stroke: cosData.jay.color, strokeWidth: 3, headLength: 12}),
+    Plot.text([cosData.jay], {x: "x", y: "y", text: "name", fill: cosData.jay.color, fontWeight: "bold", dx: 5, dy: -5}),
+    // P1
+    Plot.arrow([{x1: 0, y1: 0, x2: cosData.p1.x, y2: cosData.p1.y}],
+              {x1: "x1", y1: "y1", x2: "x2", y2: "y2", stroke: cosData.p1.color, strokeWidth: 3, headLength: 12}),
+    Plot.text([cosData.p1], {x: "x", y: "y", text: "name", fill: cosData.p1.color, fontWeight: "bold", dx: 5, dy: -5}),
+    // P2
+    Plot.arrow([{x1: 0, y1: 0, x2: cosData.p2.x, y2: cosData.p2.y}],
+              {x1: "x1", y1: "y1", x2: "x2", y2: "y2", stroke: cosData.p2.color, strokeWidth: 3, headLength: 12}),
+    Plot.text([cosData.p2], {x: "x", y: "y", text: "name", fill: cosData.p2.color, fontWeight: "bold", dx: 5, dy: -5})
+  ]
+})
+```
+
+**Qué probar:**
+
+- **Dupliques las componentes de Persona #1** (ej: de (−0.3, 0.5) a algo similar apuntando igual pero más largo). La cosine similarity **no cambia** — solo importa la dirección.
+- Movelos a Persona #1 exactamente en la misma dirección que Jay → similarity = **1.00**.
+- Ponelos a Persona #1 perpendicular a Jay → similarity = **0**.
+- Ponelos a Persona #1 apuntando exactamente al lado opuesto → similarity = **−1**.
+- Movelos a Persona #2 cerca de Jay → la "identidad" del vector reemplaza, si dos entidades apuntan en la misma dirección son **semánticamente iguales** en este espacio.
+
+### Resumiendo el poder de los embeddings
+
+Una vez que representás cada "cosa" como un vector, tenés a tu disposición toda la **geometría del espacio vectorial**:
+
+- **Búsqueda semántica**: "dame las 10 cosas más parecidas a $\vec{x}$" = buscá los 10 vectores con mayor cosine similarity.
+- **Analogías**: hacer aritmética con conceptos ($\vec{rey} - \vec{hombre} + \vec{mujer}$).
+- **Clasificación**: entrenar modelos lineales sobre embeddings ya es extremadamente fuerte.
+- **Clustering**: meter embeddings en k-means para encontrar grupos semánticos.
+
+Todo eso nace de una sola cosa: **convertir cada objeto en un punto/vector en un espacio aprendido**.
 
 ## Recap rápido: PCA
 
