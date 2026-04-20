@@ -129,6 +129,59 @@ $$
 
 El **ruido irreducible** es el piso teórico — variabilidad inherente al fenómeno que ningún modelo puede eliminar. El objetivo es encontrar el **punto dulce** donde la suma de Bias² + Varianza es mínima.
 
+### Por qué existe el tradeoff (el corazón del asunto)
+
+Las dos cosas vienen de **propiedades opuestas** del modelo. Lo que baja una sube la otra **por construcción**, no por casualidad.
+
+- **Bias bajo requiere flexibilidad** — capacidad para capturar patrones complejos, muchos parámetros para "dibujar" cualquier forma.
+- **Varianza baja requiere estabilidad** — que el modelo no se mueva mucho si cambian un poco los datos, pocos grados de libertad.
+
+Son **requerimientos en conflicto**. La misma capacidad que le permite al modelo ajustar la **señal** (↓ bias) es la que le permite ajustar el **ruido** (↑ varianza). El modelo **no sabe distinguir uno del otro** hasta haberse entrenado.
+
+::: {.callout-tip}
+## Analogía: dos estudiantes preparándose para un examen
+
+**Estudiante A — memorizador puro**: aprende cada frase del libro de memoria.
+
+- Si el examen es **idéntico al libro** → perfecto (bias bajo: capta todo).
+- Si cambian una palabra → **colapsa**, no entendió los conceptos (varianza alta).
+
+**Estudiante B — resumen general**: estudia 3 principios gruesos.
+
+- En cualquier examen responde **más o menos igual** (varianza baja).
+- Pero falla preguntas específicas porque sus principios son muy generales (bias alto).
+
+La misma rigidez que hace estable a B lo hace incompleto. La misma flexibilidad que hace exacto a A lo hace frágil. **Este es literalmente el tradeoff.**
+:::
+
+### Grados de libertad: pensar los parámetros como "dinero"
+
+Otra manera de verlo. Un modelo tiene $p$ parámetros y se entrena con $n$ puntos.
+
+- **$p$ chico** (pocos parámetros) → cada parámetro promedia muchos datos. Si algunos son ruido, el promedio lo absorbe. **Estable** (↓ varianza). Pero si el patrón real necesita más capacidad → **bias alto**.
+- **$p$ grande** (muchos parámetros) → cada parámetro toca poquitos datos. Si cambian unos puntos, los parámetros específicos se mueven mucho. **Inestable** (↑ varianza). Pero podés capturar patrones complejos → bias bajo.
+
+Los parámetros son "dinero" para gastar. Pocos = no te alcanza para el detalle. Muchos = gastás en todo, incluso en ruido.
+
+### Ejemplo clásico: polinomios sobre datos ruidosos
+
+Con 10 puntos ruidosos sobre una curva suave:
+
+- **Grado 1** (recta): no sigue la curva → **alto bias**. Pero si cambiás los 10 puntos, la recta apenas se mueve → **baja varianza**.
+- **Grado 9** (pasa por cada punto): entrena perfecto, bias cero. Pero con 10 puntos distintos del mismo fenómeno, te sale una curva **totalmente distinta** zigzagueando → **altísima varianza**.
+
+Es lo que ves en la [viz interactiva de la página de sesgos](sesgos.qmd#sec-bias-var): con grado alto, las 50 curvas (una por dataset) quedan disparadas por todos lados.
+
+### ¿Se puede escapar del tradeoff?
+
+Sí — **sin eliminarlo**, pero moviendo la curva entera hacia abajo:
+
+**Más datos**: con $n$ grande, aunque tengas $p$ grande, cada parámetro ve muchos puntos. Varianza baja **sin reducir la capacidad**. Por eso "conseguir más datos" es casi siempre la mejor solución ante overfit.
+
+**Regularización inteligente** (L1, L2, dropout, early stopping): forzás al modelo a usar su capacidad solo donde importa. Dejás al modelo flexible pero penalizás las configuraciones inestables. Bajás varianza pagando muy poco bias.
+
+**Ensembles** (Bagging, Random Forest): promediás muchos modelos alto-varianza bajo-bias → el **promedio** tiene baja varianza y sigue con bajo bias. Es la jugada de Random Forest: no rompés el tradeoff de cada árbol individual, lo esquivás promediando.
+
 ### Analogía del tiro al blanco
 
 Imaginá que tirás dardos a un blanco. Cada "tiro" es entrenar el modelo con un dataset distinto; el "blanco" es la función verdadera.
